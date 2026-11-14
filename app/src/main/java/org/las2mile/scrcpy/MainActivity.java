@@ -49,6 +49,14 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static final String PREFERENCE_SPINNER_RESOLUTION = "spinner_resolution_v2";
     private static final String PREFERENCE_SPINNER_RESOLUTION_OLD = "spinner_resolution";
     private static final int RESOLUTION_480P = 5;
+    // Recommended defaults: 480p, 1 Mbps, 30 fps, H.264, audio on and playing on both devices.
+    private static final int DEFAULT_BITRATE_INDEX = 3;   // options_bitrate_keys: 1 Mbps
+    private static final int DEFAULT_FPS_INDEX = 0;       // options_fps_values: 30
+    private static final boolean DEFAULT_AUDIO = true;
+    private static final boolean DEFAULT_AUDIO_DUP = true;
+    /** Bumped when the recommended defaults change: they are applied once on update. */
+    private static final String PREFERENCE_DEFAULTS_VERSION = "defaults_version";
+    private static final int DEFAULTS_VERSION = 2;
     private static final String PREFERENCE_SPINNER_BITRATE = "spinner_bitrate";
     private static final String PREFERENCE_SPINNER_FPS = "spinner_fps";
     private static final String PREFERENCE_DARK_MODE = "dark_mode";
@@ -222,6 +230,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         final Button startButton = findViewById(R.id.button_start);
         loadSavedPreferences();
         startButton.setOnClickListener(view -> onStartClicked(startButton));
+        findViewById(R.id.button_recommended).setOnClickListener(view -> restoreRecommendedSettings());
         findViewById(R.id.button_clear_host).setOnClickListener(view -> {
             EditText host = findViewById(R.id.editText_server_host);
             host.setText("");
@@ -738,13 +747,13 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         floatingWindowSwitch.setChecked(preferences.getBoolean(PREFERENCE_FLOATING_WINDOW, false));
         noControlSwitch.setChecked(preferences.getBoolean("No Control", false));
         navSwitch.setChecked(preferences.getBoolean("Nav Switch", false));
-        audioSwitch.setChecked(preferences.getBoolean("Audio", false));
+        audioSwitch.setChecked(preferences.getBoolean("Audio", DEFAULT_AUDIO));
         powerOnSwitch.setChecked(preferences.getBoolean("Power On", true));
         turnScreenOffSwitch.setChecked(preferences.getBoolean("Turn Screen Off", false));
         powerOffOnCloseSwitch.setChecked(preferences.getBoolean("Power Off On Close", false));
         stayAwakeSwitch.setChecked(preferences.getBoolean("Stay Awake", false));
         showTouchesSwitch.setChecked(preferences.getBoolean("Show Touches", false));
-        audioDupSwitch.setChecked(preferences.getBoolean(PREFERENCE_AUDIO_DUP, false));
+        audioDupSwitch.setChecked(preferences.getBoolean(PREFERENCE_AUDIO_DUP, DEFAULT_AUDIO_DUP));
         keepActiveSwitch.setChecked(preferences.getBoolean(PREFERENCE_KEEP_ACTIVE, false));
         autoFloatSwitch.setChecked(preferences.getBoolean(PREFERENCE_AUTO_FLOAT, true));
         // Remember the address as it is typed, not only when connecting.
@@ -766,8 +775,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         // Labels and values have the same order; new installs start at 480p (recommended).
         setSpinner(R.array.options_resolution_labels, R.id.spinner_video_resolution, PREFERENCE_SPINNER_RESOLUTION,
                 RESOLUTION_480P);
-        setSpinner(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, PREFERENCE_SPINNER_BITRATE, 2);
-        setSpinner(R.array.options_fps_values, R.id.spinner_video_fps, PREFERENCE_SPINNER_FPS, 1);
+        setSpinner(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, PREFERENCE_SPINNER_BITRATE,
+                DEFAULT_BITRATE_INDEX);
+        setSpinner(R.array.options_fps_values, R.id.spinner_video_fps, PREFERENCE_SPINNER_FPS, DEFAULT_FPS_INDEX);
 
         applyNoControlState(noControlSwitch.isChecked(), navSwitch, powerOnSwitch, turnScreenOffSwitch);
         noControlSwitch.setOnCheckedChangeListener((button, checked) -> {
@@ -828,9 +838,38 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             editor.remove(PREFERENCE_SPINNER_RESOLUTION_OLD);
             changed = true;
         }
+        // New recommended defaults: applied once when updating from an older version. Anything
+        // the user changes afterwards is remembered as before.
+        if (preferences.getInt(PREFERENCE_DEFAULTS_VERSION, 0) < DEFAULTS_VERSION) {
+            putRecommendedSettings(editor);
+            editor.putInt(PREFERENCE_DEFAULTS_VERSION, DEFAULTS_VERSION);
+            changed = true;
+        }
         if (changed) {
             editor.apply();
         }
+    }
+
+    /** 480p, 1 Mbps, 30 fps, H.264, audio on, audio on both devices. */
+    private static void putRecommendedSettings(SharedPreferences.Editor editor) {
+        editor.putInt(PREFERENCE_SPINNER_RESOLUTION, RESOLUTION_480P)
+                .putInt(PREFERENCE_SPINNER_BITRATE, DEFAULT_BITRATE_INDEX)
+                .putInt(PREFERENCE_SPINNER_FPS, DEFAULT_FPS_INDEX)
+                .putBoolean("Audio", DEFAULT_AUDIO)
+                .putBoolean(PREFERENCE_AUDIO_DUP, DEFAULT_AUDIO_DUP)
+                .putString(AdvancedOptions.PREF_PREFIX + AdvancedOptions.KEY_VIDEO_CODEC, "h264");
+    }
+
+    private void restoreRecommendedSettings() {
+        SharedPreferences.Editor editor = getPreferences().edit();
+        putRecommendedSettings(editor);
+        editor.apply();
+        showSettings(); // reload every control from the saved settings
+        View body = findViewById(R.id.body_normal);
+        if (body != null && body.getVisibility() != View.VISIBLE) {
+            findViewById(R.id.header_normal).performClick(); // keep the Normal box open
+        }
+        Toast.makeText(this, R.string.recommended_restored, Toast.LENGTH_SHORT).show();
     }
 
     private static void applyNoControlState(boolean noControl, Switch navSwitch, Switch powerOnSwitch,
@@ -906,10 +945,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         } catch (RuntimeException e) {
             Log.w(TAG, "Invalid resolution entry: " + resolution, e);
         }
-        int videoBitrate = bitrates[selectedIndex(R.id.spinner_video_bitrate, bitrates.length, 2)];
+        int videoBitrate = bitrates[selectedIndex(R.id.spinner_video_bitrate, bitrates.length, DEFAULT_BITRATE_INDEX)];
         int maxFps = 60;
         try {
-            maxFps = Integer.parseInt(fpsValues[selectedIndex(R.id.spinner_video_fps, fpsValues.length, 1)].trim());
+            maxFps = Integer.parseInt(fpsValues[selectedIndex(R.id.spinner_video_fps, fpsValues.length, DEFAULT_FPS_INDEX)].trim());
         } catch (RuntimeException e) {
             Log.w(TAG, "Invalid frame rate entry", e);
         }
