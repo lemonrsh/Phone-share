@@ -8,9 +8,25 @@ android {
         applicationId "org.las2mile.scrcpy"
         minSdk 21
         targetSdk 36
-        versionCode 21
-        versionName "5.0.1-cloudflared-test5"
+        versionCode 22
+        versionName "5.0.1-r12"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
+    }
+
+    // Two editions from the same source:
+    //  - standard:    connect to and control other phones (IP address). No Cloudflare.
+    //  - cloudflared: also "Share this phone over the internet" with a bundled cloudflared
+    //                 (src/cloudflared: binaries, ShareService declaration, share-code UI).
+    // Both use the same application id and signing key, so either one installs over the other.
+    flavorDimensions.add('edition')
+    productFlavors {
+        standard {
+            dimension = 'edition'
+        }
+        cloudflared {
+            dimension = 'edition'
+            versionNameSuffix = '-cloudflared'
+        }
     }
 
     compileOptions {
@@ -41,7 +57,7 @@ android {
         }
     }
 
-    // cloudflared (Cloudflare share test) is shipped as jniLibs/<abi>/libcloudflared.so, built for
+    // cloudflared (cloudflared edition) is shipped as src/cloudflared/jniLibs/<abi>/libcloudflared.so, built for
     // Android by CI. Legacy packaging makes Android extract it to the native-library folder,
     // the only app folder it may be executed from. It is a stripped Go program: do not strip it.
     packaging {

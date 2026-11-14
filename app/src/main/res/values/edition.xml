@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Standard edition. The cloudflared edition overrides these in src/cloudflared/res. -->
+<resources>
+    <bool name="cloudflare_edition">false</bool>
+    <string name="hint_server_ip">192.168.1.42 or 192.168.1.42:5555</string>
+    <string name="error_invalid_address">Invalid address. Use an IP such as 192.168.1.42 or 192.168.1.42:5555</string>
+</resources>

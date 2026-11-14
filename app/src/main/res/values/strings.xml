@@ -64,7 +64,6 @@
     <string name="codec_unsupported">This phone has no %1$s decoder. Choose another codec under %2$s.</string>
     <string name="section_video">Video quality</string>
     <string name="label_server_ip">Target device IP address (optionally :port, default 5555)</string>
-    <string name="hint_server_ip">192.168.1.42 or a share code (…trycloudflare.com#PIN)</string>
     <string name="label_video_resolution">Maximum video size</string>
     <string name="label_video_bitrate">Video bitrate</string>
     <string name="label_video_fps">Maximum frame rate</string>
@@ -92,9 +91,19 @@
     <string name="status_starting">Starting the scrcpy server…</string>
     <string name="press_back_again">Press back again to stop mirroring</string>
     <string name="notification_channel">Floating mirror</string>
-    <string name="notification_title">Mirroring in a floating window</string>
+    <string name="notification_title">scrcpy is running</string>
     <string name="notification_text">Drag the window to the bottom or fling it away to close it.</string>
     <string name="notification_stop">Stop</string>
+    <string name="running_channel">scrcpy is running</string>
+    <string name="running_title">scrcpy is running</string>
+    <string name="error_tunnel_needs_cloudflared">This is the standard version, which has no Cloudflare support. Install the cloudflared version to connect with a share code, or enter the other phone\'s IP address.</string>
+
+    <!-- Start-up question when ADB over Wi-Fi is off on this phone. -->
+    <string name="adb_prompt_title">Turn on ADB on this phone?</string>
+    <string name="adb_prompt_message">ADB over Wi-Fi (port 5555) is off on this phone.\n\nTurn it on if you want another phone to mirror and control this one.\n\nIf you only want to use this phone to control another phone, you don\'t need it.</string>
+    <string name="adb_prompt_enable">Enable ADB</string>
+    <string name="adb_prompt_skip">Nah, I just want to control another phone</string>
+    <string name="adb_prompt_dont_ask">Don\'t ask again</string>
     <string name="button_copy_adb_key">Connection keeps failing? Authorize with root…</string>
     <string name="adb_key_title">Authorize this phone on a rooted target</string>
     <string name="adb_key_message">The target must accept this phone\'s ADB key. Normally it asks with an \"Allow USB debugging?\" prompt. If that prompt never appears or the target hangs up, run this command on the rooted target (for example in Termux), then tap Connect again:\n\n%1$s</string>
