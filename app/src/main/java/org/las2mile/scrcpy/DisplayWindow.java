@@ -28,6 +28,7 @@ public class DisplayWindow extends FrameLayout {
     ViewGroup container;
     SurfaceView surfaceView;
     ViewGroup actionbar;
+    private boolean controlsEnabled = true;
 
     public DisplayWindow(Context context) {
         super(context);
@@ -56,10 +57,10 @@ public class DisplayWindow extends FrameLayout {
         findViewById(R.id.iv_close).setOnTouchListener(new OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent motionEvent) {
-                if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN){
+                if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN && closeListener != null) {
                     closeListener.onClick(view);
                 }
-                return false;
+                return true;
             }
         });
 
@@ -76,7 +77,9 @@ public class DisplayWindow extends FrameLayout {
                     case MotionEvent.ACTION_MOVE:
                         float disX = motionEvent.getRawX()-oldX;
                         float disY = motionEvent.getRawY()-oldY;
-                        moveCallback.onMove(disX,disY);
+                        if (moveCallback != null) {
+                        moveCallback.onMove(disX, disY);
+                    }
                         oldX = motionEvent.getRawX();
                         oldY = motionEvent.getRawY();
                         break;
@@ -97,7 +100,7 @@ public class DisplayWindow extends FrameLayout {
                         actionbar.setVisibility(View.GONE);
                     }else{
                         container.setVisibility(View.VISIBLE);
-                        actionbar.setVisibility(View.VISIBLE);
+                        actionbar.setVisibility(controlsEnabled ? View.VISIBLE : View.GONE);
                     }
                 }
                 return false;
@@ -107,7 +110,9 @@ public class DisplayWindow extends FrameLayout {
             @Override
             public boolean onTouch(View view, MotionEvent motionEvent) {
                 if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN){
-                    actionCallback.onAction(0);
+                    if (actionCallback != null) {
+                        actionCallback.onAction(0);
+                    }
                 }
                 return false;
             }
@@ -116,7 +121,9 @@ public class DisplayWindow extends FrameLayout {
             @Override
             public boolean onTouch(View view, MotionEvent motionEvent) {
                 if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN){
-                    actionCallback.onAction(1);
+                    if (actionCallback != null) {
+                        actionCallback.onAction(1);
+                    }
                 }
                 return false;
             }
@@ -125,7 +132,9 @@ public class DisplayWindow extends FrameLayout {
             @Override
             public boolean onTouch(View view, MotionEvent motionEvent) {
                 if (motionEvent.getActionMasked() == MotionEvent.ACTION_DOWN){
-                    actionCallback.onAction(2);
+                    if (actionCallback != null) {
+                        actionCallback.onAction(2);
+                    }
                 }
                 return false;
             }
@@ -133,7 +142,7 @@ public class DisplayWindow extends FrameLayout {
         container.setOnTouchListener(new OnTouchListener() {
             @Override
             public boolean onTouch(View view, MotionEvent motionEvent) {
-                return onDisplayTouchListener.onTouch(view,motionEvent);
+                return onDisplayTouchListener != null && onDisplayTouchListener.onTouch(view, motionEvent);
             }
         });
     }
@@ -189,6 +198,11 @@ public class DisplayWindow extends FrameLayout {
 
     public void hideHintTip(){
         findViewById(R.id.hint).setVisibility(GONE);
+    }
+
+    public void setControlEnabled(boolean enabled) {
+        controlsEnabled = enabled;
+        actionbar.setVisibility(enabled ? View.VISIBLE : View.GONE);
     }
 
     public Surface getDisplaySurface(){

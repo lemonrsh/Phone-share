@@ -22,7 +22,7 @@ public class SendCommands {
 
     private Thread thread = null;
     private Context context;
-    private int status;
+    private volatile int status;
 
 
     public SendCommands() {
@@ -64,26 +64,48 @@ public class SendCommands {
     }
 
 
-    public int SendAdbCommands(Context context, final byte[] fileBase64, final String ip, String localip, int bitrate, int size) {
+    public int SendAdbCommands(Context context, final byte[] fileBase64, final String ip, String localip,
+                               ScrcpySessionOptions options) {
+        if (context == null || fileBase64 == null || fileBase64.length == 0
+                || ip == null || ip.trim().isEmpty() || localip == null || localip.trim().isEmpty() || options == null) {
+            return 2;
+        }
         this.context = context;
         status = 1;
         final StringBuilder command = new StringBuilder();
-        command.append(" CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / org.las2mile.scrcpy.Server ");
-        command.append(" /" + localip + " " + Long.toString(size) + " " + Long.toString(bitrate) + ";");
+        command.append(" CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / com.genymobile.scrcpy.Server ");
+        command.append(ScrcpySessionOptions.SERVER_VERSION);
+        command.append(" log_level=info");
+        command.append(" tcp_port=").append(ScrcpySessionOptions.SERVER_PORT);
+        command.append(" tcp_client=").append(localip);
+        command.append(" tunnel_forward=false");
+        command.append(" video=true audio=").append(options.audioEnabled);
+        command.append(" control=").append(!options.noControl);
+        command.append(" video_codec=h264 audio_codec=aac");
+        command.append(" max_size=").append(options.maxSize);
+        command.append(" video_bit_rate=").append(options.videoBitRate);
+        command.append(" max_fps=").append(options.maxFps);
+        command.append(" power_on=").append(options.powerOn);
+        command.append(" power_off_on_close=").append(options.powerOffOnClose);
+        command.append(" stay_awake=").append(options.stayAwake);
+        command.append(" show_touches=").append(options.showTouches);
+        command.append(" cleanup=true send_dummy_byte=true send_device_meta=true");
+        command.append(" send_frame_meta=true send_stream_meta=true;");
 
         thread = new Thread(new Runnable() {
             @Override
             public void run() {
                 try {
                     adbWrite(ip, fileBase64, command.toString());
-                } catch (IOException e) {
+                } catch (IOException | RuntimeException e) {
                     e.printStackTrace();
+                    status = 2;
                 }
             }
         });
         thread.start();
         int count = 0;
-        while (status == 1 && count < 100) {
+        while (status == 1 && count < 300) {
             Log.e("ADB", "Connecting...");
             try {
                 Thread.sleep(100);
@@ -92,7 +114,7 @@ public class SendCommands {
                 e.printStackTrace();
             }
         }
-        if(count == 100){
+        if (count == 300 && status == 1) {
             status = 2;
         }
         return status;
@@ -110,6 +132,7 @@ public class SendCommands {
             crypto = setupCrypto();
         } catch (NoSuchAlgorithmException e) {
             e.printStackTrace();
+            status = 2;
             return;
         } catch (IOException e) {
             e.printStackTrace();
@@ -139,8 +162,10 @@ public class SendCommands {
                 adb.connect();
             } catch (IllegalStateException e) {
                 e.printStackTrace();
+                status = 2;
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
+                status = 2;
                 return;
             }
         }
@@ -161,26 +186,22 @@ public class SendCommands {
                 stream.write(" " + '\n');
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
+                status = 2;
                 return;
             }
         }
 
 
-        String responses = "";
+        StringBuilder responses = new StringBuilder();
         boolean done = false;
-        while (!done && stream != null && status ==1) {
+        while (!done && stream != null && status == 1) {
             try {
                 byte[] responseBytes = stream.read();
-                String response = new String(responseBytes, StandardCharsets.US_ASCII);
-                if (response.substring(response.length() - 2).equals("$ ") ||
-                        response.substring(response.length() - 2).equals("# ")) {
-                    done = true;
-//                    Log.e("ADB_Shell","Prompt ready");
-                    responses += response;
-                    break;
-                } else {
-                    responses += response;
+                responses.append(new String(responseBytes, StandardCharsets.US_ASCII));
+                if (responses.length() > 4096) {
+                    responses.delete(0, responses.length() - 4096);
                 }
+                done = responses.toString().endsWith("$ ") || responses.toString().endsWith("# ");
             } catch (InterruptedException | IOException e) {
                 status = 2;
                 e.printStackTrace();
@@ -227,14 +248,19 @@ public class SendCommands {
                 stream.write(" base64 -d < serverBase64 > scrcpy-server.jar && rm serverBase64" + '\n');
                 Thread.sleep(100);
                 stream.write(command + '\n');
+                if (status == 1) {
+                    status = 0;
+                }
             } catch (IOException | InterruptedException e) {
                 e.printStackTrace();
                 status =2;
                 return;
             }
-	}
-        if (status ==1);
-        status = 0;
+        }
+        if (status == 1) {
+            // The shell did not reach the point where the server command was sent.
+            status = 2;
+        }
 
     }
 
