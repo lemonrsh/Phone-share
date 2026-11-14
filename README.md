@@ -4,6 +4,8 @@
 
 Phone Share (formerly "scrcpy Android") is an Android-to-Android viewer for a remote Android device connected over Wi-Fi. The bundled server source is pinned to the upstream [Genymobile/scrcpy `v5.0.1` tag](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1). The app uses a small TCP transport adapter so it can connect directly from an Android device without a desktop `adb forward` process.
 
+App ID (package name): **`com.lemonrsh.phoneshare`** (from 5.0.1-r20; earlier versions used `org.las2mile.scrcpy`, so r20 installs as a new app next to them: uninstall the old one, and allow this phone again on the other device the first time, because the new app has a new ADB key).
+
 ## Editions
 
 Every release is built from the same source in two editions (Gradle product flavors). They share the app id and signing key, so either one installs over the other and keeps your settings.

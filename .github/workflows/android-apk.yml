@@ -197,7 +197,7 @@ jobs:
             extra+=(--prerelease)
             latest=()
           fi
-          install_note="Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings (from 5.0.1-r9 on). The release APK is unsigned unless release signing is configured. The standard and cloudflared editions share the same app id and key, so you can switch between them by installing the other one."
+          install_note="Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings. From 5.0.1-r20 the app id is com.lemonrsh.phoneshare: it installs next to older versions (org.las2mile.scrcpy), so uninstall the old one. The release APK is unsigned unless release signing is configured. The standard and cloudflared editions share the same app id and key, so you can switch between them by installing the other one."
           # Cloudflared edition first, so that the standard edition ends up as the latest release.
           gh release create "$CF_TAG" "${extra[@]}" \
             "dist/phone-share-${CF_TAG}-unsigned.apk" \

@@ -1,15 +1,15 @@
 apply plugin: 'com.android.application'
 
 android {
-    namespace 'org.las2mile.scrcpy'
+    namespace 'com.lemonrsh.phoneshare'
     compileSdk 36
 
     defaultConfig {
-        applicationId "org.las2mile.scrcpy"
+        applicationId "com.lemonrsh.phoneshare"
         minSdk 21
         targetSdk 36
-        versionCode 29
-        versionName "5.0.1-r19"
+        versionCode 30
+        versionName "5.0.1-r20"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
