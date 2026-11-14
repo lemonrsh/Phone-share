@@ -69,6 +69,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static final int REQUEST_NOTIFICATIONS = 1;
     /** The start-up ADB question is asked at most once per app launch. */
     private static boolean adbPromptChecked;
+    /** The start-up floating-window permission question is asked at most once per app launch. */
+    private static boolean overlayPromptChecked;
+    /** Back from the overlay settings opened by the start-up question: continue with the ADB question. */
+    private boolean resumeStartupPrompts;
     private static final long BACK_PRESS_INTERVAL_MS = 1_500;
 
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
@@ -118,7 +122,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         ShareService.addListener(shareListener);
         RunningNotification.setStopHandler(stopFromNotification);
         if (savedInstanceState == null) {
-            checkAdbOnStartup();
+            runStartupPrompts();
         }
     }
 
@@ -139,7 +143,54 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         return getResources().getBoolean(R.bool.cloudflare_edition);
     }
 
-    // ---------------------------------------------------------------- start-up ADB question
+    // ---------------------------------------------------------------- start-up questions
+
+    /** First the floating-window permission, then the ADB question (one dialog at a time). */
+    private void runStartupPrompts() {
+        if (!overlayPromptChecked && needsOverlayPermission()) {
+            overlayPromptChecked = true;
+            showOverlayPrompt();
+        } else {
+            checkAdbOnStartup();
+        }
+    }
+
+    private boolean needsOverlayPermission() {
+        return Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this);
+    }
+
+    /** "Display over other apps" is needed for the floating window: Go to settings, or Later. */
+    private void showOverlayPrompt() {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.overlay_prompt_title)
+                .setMessage(R.string.overlay_prompt_message)
+                .setPositiveButton(R.string.overlay_prompt_go, (dialog, which) -> {
+                    DiagnosticLog.i("app", "Start-up: opening the floating window permission settings");
+                    resumeStartupPrompts = true;
+                    openOverlaySettings();
+                })
+                .setNegativeButton(R.string.overlay_prompt_later, (dialog, which) -> {
+                    DiagnosticLog.i("app", "Start-up: floating window permission later");
+                    checkAdbOnStartup();
+                })
+                .setOnCancelListener(dialog -> checkAdbOnStartup())
+                .show();
+    }
+
+    private void openOverlaySettings() {
+        try {
+            startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                    android.net.Uri.parse("package:" + getPackageName())));
+        } catch (RuntimeException e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
+            } catch (RuntimeException e2) {
+                Toast.makeText(this, R.string.auto_float_needs_permission, Toast.LENGTH_LONG).show();
+                resumeStartupPrompts = false;
+                checkAdbOnStartup();
+            }
+        }
+    }
 
     /** When ADB over Wi-Fi is off: offer to turn it on, or just use the app as a controller. */
     private void checkAdbOnStartup() {
@@ -695,14 +746,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     }
 
     private void showFloatingWindow() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
-            try {
-                Intent intent = new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                        android.net.Uri.parse("package:" + getPackageName()));
-                startActivity(intent);
-            } catch (RuntimeException e) {
-                startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
-            }
+        if (needsOverlayPermission()) {
+            openOverlaySettings();
             Toast.makeText(this, "Allow display over other apps, then tap Connect again", Toast.LENGTH_LONG).show();
             return;
         }
@@ -1280,6 +1325,13 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         super.onResume();
         resumed = true;
         incomingSessions.start();
+        if (resumeStartupPrompts) {
+            resumeStartupPrompts = false;
+            if (!needsOverlayPermission()) {
+                Toast.makeText(this, R.string.overlay_prompt_granted, Toast.LENGTH_SHORT).show();
+            }
+            checkAdbOnStartup();
+        }
         if (mirroring) {
             hideSystemUi();
             registerProximity();

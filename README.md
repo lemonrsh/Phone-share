@@ -15,7 +15,8 @@ Every release is built from the same source in two editions (Gradle product flav
 
 ## Features
 
-- **Start-up ADB question**: when ADB over Wi-Fi (port 5555) is off on this phone, the app asks once per launch: **Enable ADB** (one tap with root, otherwise it shows how to turn it on) or **Nah, I just want to control another phone**, which just opens the app. Tick **Don't ask again** to stop the question.
+- **Start-up floating window question**: if Android's "Display over other apps" permission is missing, the app asks once per launch: **Go to settings** (opens the permission page for Phone Share) or **Do it later**. It is needed for the floating window and auto-float.
+- **Start-up ADB question** (after the floating window question): when ADB over Wi-Fi (port 5555) is off on this phone, the app asks once per launch: **Enable ADB** (one tap with root, otherwise it shows how to turn it on) or **Nah, I just want to control another phone**, which just opens the app. Tick **Don't ask again** to stop the question.
 - **"Phone Share is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
 
 - Full-screen mirroring or a YouTube-style floating player (see below).

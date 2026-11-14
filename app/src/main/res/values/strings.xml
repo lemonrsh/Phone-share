@@ -80,7 +80,7 @@
     <string name="switch_keep_active">Keep the remote screen awake</string>
     <string name="switch_auto_float">Float automatically when leaving the app</string>
     <string name="auto_float_note">While connected in full screen, pressing Home, opening Recents or switching apps moves the mirror into the floating window without reconnecting.</string>
-    <string name="auto_float_needs_permission">Allow \"display over other apps\" for scrcpy so mirroring can continue in a floating window.</string>
+    <string name="auto_float_needs_permission">Allow \"display over other apps\" for Phone Share so mirroring can continue in a floating window.</string>
     <string name="appswitch_button">▢</string>
     <string name="home_button">○</string>
     <string name="back_button">◁</string>
@@ -97,6 +97,13 @@
     <string name="running_channel">Phone Share is running</string>
     <string name="running_title">Phone Share is running</string>
     <string name="error_tunnel_needs_cloudflared">This is the standard version, which has no Cloudflare support. Install the cloudflared version to connect with a share code, or enter the other phone\'s IP address.</string>
+
+    <!-- Start-up question when the floating window permission is missing. -->
+    <string name="overlay_prompt_title">Allow the floating window?</string>
+    <string name="overlay_prompt_message">Phone Share can keep mirroring in a small floating window when you go Home or switch apps, like a YouTube popup player.\n\nFor that, Android needs the \"Display over other apps\" permission. Tap Go to settings and turn it on for Phone Share.</string>
+    <string name="overlay_prompt_go">Go to settings</string>
+    <string name="overlay_prompt_later">Do it later</string>
+    <string name="overlay_prompt_granted">Floating window allowed</string>
 
     <!-- Start-up question when ADB over Wi-Fi is off on this phone. -->
     <string name="adb_prompt_title">Turn on ADB on this phone?</string>
