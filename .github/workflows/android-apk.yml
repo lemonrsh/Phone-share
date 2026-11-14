@@ -60,8 +60,10 @@ jobs:
 
           log = Path(os.environ['RUNNER_TEMP'], 'gradle-build.log').read_text(errors='replace')
           lines = log.splitlines()
-          diagnostics = [line for line in lines if any(token in line.lower() for token in ('what went wrong', 'caused by:', 'could not', 'error:', 'failed to'))]
-          details = '\n'.join(diagnostics[-12:] + ['--- last output ---'] + lines[-40:])[-8000:]
+          marker = next((index for index, line in enumerate(lines) if line.strip() == '* What went wrong:'), None)
+          problem = lines[marker:marker + 30] if marker is not None else []
+          diagnostics = [line for line in lines if any(token in line.lower() for token in ('execution failed for task', 'caused by:', 'could not', 'error:', 'failed to'))]
+          details = '\n'.join(problem + diagnostics[-12:] + ['--- last output ---'] + lines[-35:])[-10000:]
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
               summary.write('### Gradle build failure (diagnostics and last output)\n\n```text\n' + details + '\n```\n')
           message = ('Gradle build failed. Diagnostics and last output: ' + details).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
