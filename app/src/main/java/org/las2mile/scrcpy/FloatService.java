@@ -10,23 +10,25 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.pm.ServiceInfo;
 import android.content.res.Configuration;
-import android.graphics.PixelFormat;
 import android.os.Build;
 import android.os.Handler;
 import android.os.IBinder;
 import android.os.Looper;
 import android.util.Log;
 import android.view.ContextThemeWrapper;
-import android.view.Gravity;
-import android.view.SurfaceHolder;
-import android.view.WindowManager;
+import android.view.MotionEvent;
+import android.view.Surface;
 import android.widget.Toast;
 
+import org.las2mile.scrcpy.pip.FloatingPip;
+
 /**
- * Hosts the floating mirror window. Runs as a foreground service so that the
- * system does not stop the session while another app is in front.
+ * Hosts the YouTube-style floating mirror window. Runs as a foreground service
+ * so that the system does not stop the session while another app is in front.
+ * The window has no buttons: swiping it onto the bottom target (or flinging it
+ * down) closes it and stops the service.
  */
-public class FloatService extends Service implements ScrcpyClient.Listener, SurfaceHolder.Callback {
+public class FloatService extends Service implements ScrcpyClient.Listener, FloatingPip.Callbacks {
     public static final String ACTION_START = "org.las2mile.scrcpy.action.START_FLOATING";
     public static final String ACTION_STOP = "org.las2mile.scrcpy.action.STOP_FLOATING";
     public static final String EXTRA_HOST = "org.las2mile.scrcpy.extra.HOST";
@@ -38,10 +40,9 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
     private static final int NOTIFICATION_ID = 1;
 
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
-    private DisplayWindow displayWindow;
-    private WindowManager windowManager;
-    private WindowManager.LayoutParams layoutParams;
-    private boolean viewAdded;
+    private FloatingPip pip;
+    private boolean pipControlEnabled;
+    private Surface surface;
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
     private AdbLauncher launcher;
     private ScrcpyClient client;
@@ -75,13 +76,16 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
 
         // A new start request replaces any running session.
         stopSession();
+        if (pip != null && pipControlEnabled == sessionOptions.noControl) {
+            // The gesture layout depends on whether remote control is enabled.
+            removeWindow();
+        }
         if (!ensureWindow()) {
             stopSelf();
             return START_NOT_STICKY;
         }
-        displayWindow.showHint(getString(R.string.status_starting));
-        displayWindow.setControlEnabled(!sessionOptions.noControl);
-        displayWindow.setRemote(remoteWidth, remoteHeight);
+        pip.setStatus(getString(R.string.status_starting));
+        pip.showLoading(true);
         launch(address, sessionOptions.copy());
         return START_NOT_STICKY;
     }
@@ -124,17 +128,16 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
             return;
         }
         client = new ScrcpyClient(address.host, options, session, this);
-        SurfaceHolder holder = displayWindow.getSurfaceView().getHolder();
-        if (holder.getSurface().isValid()) {
-            client.setSurface(holder.getSurface());
+        if (surface != null && surface.isValid()) {
+            client.setSurface(surface);
         }
         client.start();
     }
 
     @Override
     public void onConnected(int width, int height) {
-        if (displayWindow != null) {
-            displayWindow.hideHintTip();
+        if (pip != null) {
+            pip.showLoading(false);
         }
         onVideoSizeChanged(width, height);
     }
@@ -143,8 +146,8 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
     public void onVideoSizeChanged(int width, int height) {
         remoteWidth = width;
         remoteHeight = height;
-        if (displayWindow != null) {
-            displayWindow.setRemote(width, height);
+        if (pip != null) {
+            pip.setVideoSize(width, height);
         }
     }
 
@@ -155,30 +158,49 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
         stopSelf();
     }
 
+    // ---------------------------------------------------------------- FloatingPip.Callbacks
+
     @Override
-    public void surfaceCreated(SurfaceHolder holder) {
+    public void onSurfaceAvailable(Surface newSurface) {
+        surface = newSurface;
         if (client != null) {
-            client.setSurface(holder.getSurface());
+            client.setSurface(newSurface);
         }
     }
 
     @Override
-    public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
-        // The decoder scales into the Surface.
-    }
-
-    @Override
-    public void surfaceDestroyed(SurfaceHolder holder) {
+    public void onSurfaceDestroyed() {
+        surface = null;
         if (client != null) {
+            // Blocks until the decoder no longer renders into the old surface.
             client.setSurface(null);
         }
     }
 
     @Override
+    public void onRemoteTouch(MotionEvent event, int videoWidth, int videoHeight) {
+        if (client != null) {
+            client.sendTouch(event, videoWidth, videoHeight);
+        }
+    }
+
+    @Override
+    public void onKey(int keycode) {
+        if (client != null) {
+            client.sendKeyEvent(keycode);
+        }
+    }
+
+    @Override
+    public void onDismissed() {
+        stopSelf();
+    }
+
+    @Override
     public void onConfigurationChanged(Configuration newConfig) {
         super.onConfigurationChanged(newConfig);
-        if (displayWindow != null) {
-            displayWindow.setRemote(remoteWidth, remoteHeight);
+        if (pip != null) {
+            pip.onConfigurationChanged();
         }
     }
 
@@ -202,93 +224,33 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Surf
     }
 
     private boolean ensureWindow() {
-        if (viewAdded) {
+        if (pip != null) {
             return true;
-        }
-        try {
-            setupDisplay();
-            windowManager = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
-            layoutParams = new WindowManager.LayoutParams();
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                layoutParams.type = WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY;
-            } else {
-                layoutParams.type = legacyOverlayType();
-            }
-            // Not focusable: the keyboard and the back key keep working in the app underneath.
-            layoutParams.flags = WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL
-                    | WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                    | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS;
-            layoutParams.format = PixelFormat.TRANSLUCENT;
-            layoutParams.gravity = Gravity.TOP | Gravity.START;
-            layoutParams.width = WindowManager.LayoutParams.WRAP_CONTENT;
-            layoutParams.height = WindowManager.LayoutParams.WRAP_CONTENT;
-            windowManager.addView(displayWindow, layoutParams);
-            viewAdded = true;
-            return true;
-        } catch (RuntimeException e) {
-            // Typically a missing "display over other apps" permission.
-            Log.e(TAG, "Could not show the floating window", e);
-            showToast("Could not show the floating window. Allow \"display over other apps\" for scrcpy.");
-            return false;
-        }
-    }
-
-    @SuppressWarnings("deprecation")
-    private static int legacyOverlayType() {
-        return WindowManager.LayoutParams.TYPE_PHONE;
-    }
-
-    private void removeWindow() {
-        if (viewAdded && windowManager != null && displayWindow != null) {
-            try {
-                windowManager.removeView(displayWindow);
-            } catch (RuntimeException ignored) {
-                // Already removed.
-            }
-        }
-        viewAdded = false;
-    }
-
-    private void setupDisplay() {
-        if (displayWindow != null) {
-            return;
         }
         boolean darkMode = getSharedPreferences(PREFERENCE_KEY, MODE_PRIVATE).getBoolean(PREFERENCE_DARK_MODE, false);
         Context themedContext = new ContextThemeWrapper(this, darkMode ? R.style.AppThemeDark : R.style.AppTheme);
-        displayWindow = new DisplayWindow(themedContext);
-        displayWindow.getSurfaceView().getHolder().addCallback(this);
-        displayWindow.setCloseListener(v -> stopSelf());
-        displayWindow.setMoveCallback((x, y) -> {
-            if (layoutParams != null && windowManager != null && viewAdded) {
-                layoutParams.x += Math.round(x);
-                layoutParams.y += Math.round(y);
-                try {
-                    windowManager.updateViewLayout(displayWindow, layoutParams);
-                } catch (RuntimeException e) {
-                    Log.w(TAG, "Could not move the floating window", e);
-                }
-            }
-        });
-        displayWindow.setActionCallback(actionType -> {
-            if (client == null) {
-                return;
-            }
-            switch (actionType) {
-                case 0:
-                    client.sendKeyEvent(4); // BACK
-                    break;
-                case 1:
-                    client.sendKeyEvent(3); // HOME
-                    break;
-                case 2:
-                    client.sendKeyEvent(187); // APP_SWITCH
-                    break;
-                default:
-                    break;
-            }
-        });
-        displayWindow.setOnDisplayTouchListener((view, motionEvent) -> client != null
-                && client.sendTouch(motionEvent, displayWindow.getSurfaceWidth(), displayWindow.getSurfaceHeight()));
+        FloatingPip window = new FloatingPip(themedContext, !sessionOptions.noControl, this);
+        window.setVideoSize(remoteWidth, remoteHeight);
+        try {
+            window.show();
+        } catch (RuntimeException e) {
+            // Typically a missing "display over other apps" permission.
+            Log.e(TAG, "Could not show the floating window", e);
+            window.remove();
+            showToast("Could not show the floating window. Allow \"display over other apps\" for scrcpy.");
+            return false;
+        }
+        pip = window;
+        pipControlEnabled = !sessionOptions.noControl;
+        return true;
+    }
+
+    private void removeWindow() {
+        if (pip != null) {
+            pip.remove();
+            pip = null;
+        }
+        surface = null;
     }
 
     private void showToast(String message) {

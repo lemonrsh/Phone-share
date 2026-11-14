@@ -4,15 +4,25 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
 
 ## Features
 
-- Full-screen mirroring or a movable floating window.
+- Full-screen mirroring or a YouTube-style floating player (see below).
 - Light and dark settings screens.
 - Selectable maximum video size, bitrate and frame rate.
 - One **Scrcpy v5.0.1 options** section for video size/bitrate/frame rate, audio, no-control, wake/screen-power, stay-awake and show-touches settings.
 - AAC audio playback can be enabled for compatible target devices (Android 10 or newer is recommended).
 - Settings are remembered on the phone.
 - The server is only uploaded when the copy on the target differs, so reconnecting is fast.
-- Rotation, app switching and minimizing the floating window keep the session alive (the decoder is rebuilt on the new surface and a fresh key frame is requested).
+- Rotation and app switching keep the session alive (the decoder is rebuilt on the new surface and a fresh key frame is requested).
 - The floating window runs as a foreground service (with a **Stop** action in its notification) so Android does not stop it in the background.
+
+### Floating player
+
+The floating window behaves like YouTube's picture-in-picture popup:
+
+- Rounded card with a shadow that starts small in the bottom-right corner and keeps the remote screen's aspect ratio.
+- **Move:** drag it (with remote control on, drag the small handle at the top, or use two fingers). Let go or fling it and it springs to the nearest side of the screen.
+- **Resize:** pinch with two fingers, or double-tap (the handle) to switch between small and large.
+- **Close:** there is no close button. Drag the window onto the ✕ target at the bottom of the screen, fling it down, or throw it off the left/right edge.
+- **Control:** with remote control on, one finger on the video controls the remote device. Tap the handle to show Back / Home / Recents for a few seconds.
 
 The Android viewer supports the common server-side options listed above. Desktop-only features such as recording to a desktop file, camera capture, USB/OTG input, virtual-display management and desktop window controls are not exposed by this Android app.
 
