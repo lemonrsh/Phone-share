@@ -91,6 +91,8 @@ public class Options {
     // port keeps the standard scrcpy adb/local-socket transport.
     private int tcpPort;
     private String tcpClientIp;
+    // Name of the controlling phone, shown by the app on this phone (see SessionBeacon).
+    private String clientName;
 
     public Ln.Level getLogLevel() {
         return logLevel;
@@ -162,6 +164,10 @@ public class Options {
 
     public String getTcpClientIp() {
         return tcpClientIp;
+    }
+
+    public String getClientName() {
+        return clientName;
     }
 
     public Rect getCrop() {
@@ -565,6 +571,10 @@ public class Options {
                     if (options.tcpPort < 1 || options.tcpPort > 65535) {
                         throw new IllegalArgumentException("Invalid TCP port: " + options.tcpPort);
                     }
+                    break;
+                case "client_name":
+                    // Spaces cannot be passed on the command line; the app sends them as '_'.
+                    options.clientName = value.replace('_', ' ');
                     break;
                 case "tcp_client":
                     options.tcpClientIp = value;

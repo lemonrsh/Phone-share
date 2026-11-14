@@ -11,6 +11,7 @@ import com.genymobile.scrcpy.control.ControlChannel;
 import com.genymobile.scrcpy.control.Controller;
 import com.genymobile.scrcpy.device.DesktopConnection;
 import com.genymobile.scrcpy.device.Device;
+import com.genymobile.scrcpy.device.SessionBeacon;
 import com.genymobile.scrcpy.device.Streamer;
 import com.genymobile.scrcpy.model.ConfigurationException;
 import com.genymobile.scrcpy.model.NewDisplay;
@@ -104,6 +105,12 @@ public final class Server {
 
         DesktopConnection connection = DesktopConnection.open(scid, tunnelForward, video, audio, control, sendDummyByte,
                 options.getTcpPort(), options.getTcpClientIp());
+        SessionBeacon beacon = null;
+        if (options.getTcpPort() > 0) {
+            // Ending the main loop runs the normal cleanup below, exactly like a client hang-up.
+            beacon = SessionBeacon.start(options.getTcpClientIp(), options.getClientName(),
+                    () -> Looper.getMainLooper().quitSafely());
+        }
         try {
             if (options.getSendDeviceMeta()) {
                 connection.sendDeviceMeta(Device.getDeviceName());
@@ -169,6 +176,9 @@ public final class Server {
 
             Looper.loop(); // interrupted by the Completion implementation
         } finally {
+            if (beacon != null) {
+                beacon.stop();
+            }
             if (cleanUp != null) {
                 cleanUp.interrupt();
             }
