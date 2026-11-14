@@ -2,176 +2,325 @@ package org.las2mile.scrcpy.decoder;
 
 import android.media.MediaCodec;
 import android.media.MediaFormat;
+import android.os.Build;
+import android.util.Log;
 import android.view.Surface;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
-import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.ReentrantReadWriteLock;
 
-/** H.264 decoder feeding the local SurfaceView. */
+/**
+ * Low-latency H.264 decoder rendering into a Surface.
+ *
+ * <p>Input is queued from the network thread, output is drained and rendered
+ * by a dedicated thread. Both only take the shared (read) side of a lock, so
+ * they never block each other; codec creation, surface changes and release take
+ * the exclusive side. The last codec configuration is remembered so that the
+ * decoder can be rebuilt when the Surface is recreated (rotation, app switch)
+ * or after a codec error, without waiting for a new stream from the server.
+ */
 public final class VideoDecoder {
-    private final Object codecLock = new Object();
-    private final AtomicBoolean configured = new AtomicBoolean(false);
-    private volatile MediaCodec codec;
-    private volatile Worker worker;
+    private static final String TAG = "VideoDecoder";
+    private static final String MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC;
+    private static final long INPUT_TIMEOUT_US = 20_000;
+    private static final long OUTPUT_TIMEOUT_US = 10_000;
+    private static final int INPUT_ATTEMPTS = 25; // up to ~500 ms of decoder back-pressure
 
-    public void decodeSample(byte[] data, int offset, int size, long presentationTimeUs, int flags) {
-        Worker currentWorker = worker;
-        if (currentWorker != null) {
-            currentWorker.decodeSample(data, offset, size, presentationTimeUs, flags);
-        }
+    /** Called when the decoder needs a key frame to resume (after a reset or drop). */
+    public interface KeyFrameRequester {
+        void requestKeyFrame();
     }
 
-    public void configure(Surface surface, int width, int height, ByteBuffer csd0, ByteBuffer csd1) {
-        Worker currentWorker = worker;
-        if (currentWorker != null) {
-            currentWorker.configure(surface, width, height, csd0, csd1);
-        }
+    private final ReentrantReadWriteLock lock = new ReentrantReadWriteLock();
+    /** Number of threads waiting for the exclusive lock; makes the input loop give way quickly. */
+    private final AtomicInteger exclusiveWaiters = new AtomicInteger();
+    private final KeyFrameRequester keyFrameRequester;
+    private final Thread outputThread;
+
+    // Guarded by lock (write side for mutation).
+    private MediaCodec codec;
+    private Surface surface;
+    private ByteBuffer sps;
+    private ByteBuffer pps;
+    private int width;
+    private int height;
+    private boolean lowLatencySupported = true;
+
+    private volatile boolean released;
+    private volatile boolean waitingForKeyFrame = true;
+    private volatile boolean codecFailed;
+
+    public VideoDecoder(KeyFrameRequester keyFrameRequester) {
+        this.keyFrameRequester = keyFrameRequester;
+        outputThread = new Thread(this::drainOutput, "scrcpy-video-output");
+        outputThread.setPriority(Thread.MAX_PRIORITY);
+        outputThread.start();
     }
 
-    public synchronized void start() {
-        if (worker == null || !worker.isAlive()) {
-            worker = new Worker();
-            worker.start();
-        } else {
-            worker.resumeDecoding();
-        }
-    }
-
-    public void pause() {
-        Worker currentWorker = worker;
-        if (currentWorker != null) {
-            currentWorker.pauseDecoding();
-        }
-    }
-
-    public void resume() {
-        start();
-    }
-
-    public synchronized void stop() {
-        Worker currentWorker = worker;
-        worker = null;
-        configured.set(false);
-        if (currentWorker != null) {
-            currentWorker.stopDecoding();
-        }
-    }
-
-    private void releaseCodec() {
-        synchronized (codecLock) {
-            configured.set(false);
-            MediaCodec currentCodec = codec;
-            codec = null;
-            if (currentCodec != null) {
-                try {
-                    currentCodec.stop();
-                } catch (IllegalStateException ignored) {
-                    // The decoder was not started or was already stopped.
-                }
-                currentCodec.release();
-            }
-        }
-    }
-
-    private final class Worker extends Thread {
-        private final AtomicBoolean running = new AtomicBoolean(true);
-        private final AtomicBoolean paused = new AtomicBoolean(false);
-
-        Worker() {
-            super("scrcpy-video-decoder");
-        }
-
-        void configure(Surface surface, int width, int height, ByteBuffer csd0, ByteBuffer csd1) {
-            synchronized (codecLock) {
-                releaseCodec();
-                MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
-                format.setByteBuffer("csd-0", csd0);
-                format.setByteBuffer("csd-1", csd1);
-                try {
-                    MediaCodec newCodec = MediaCodec.createDecoderByType("video/avc");
-                    newCodec.configure(format, surface, null, 0);
-                    newCodec.start();
-                    codec = newCodec;
-                    configured.set(true);
-                } catch (IOException e) {
-                    throw new RuntimeException("Failed to create H.264 decoder", e);
-                }
-            }
-        }
-
-        void decodeSample(byte[] data, int offset, int size, long presentationTimeUs, int flags) {
-            if (!running.get() || paused.get() || !configured.get()) {
+    /** Sets (or clears, with {@code null}) the output Surface. Blocks until the old Surface is unused. */
+    public void setSurface(Surface newSurface) {
+        boolean needKeyFrame = false;
+        lockExclusive();
+        try {
+            if (released) {
                 return;
             }
-            synchronized (codecLock) {
-                MediaCodec currentCodec = codec;
-                if (currentCodec == null || !configured.get()) {
-                    return;
-                }
-                try {
-                    int index = currentCodec.dequeueInputBuffer(10_000);
-                    if (index < 0) {
-                        return;
-                    }
-                    ByteBuffer buffer = currentCodec.getInputBuffer(index);
-                    if (buffer == null || size > buffer.capacity()) {
-                        currentCodec.queueInputBuffer(index, 0, 0, presentationTimeUs, 0);
-                        return;
-                    }
-                    buffer.clear();
-                    buffer.put(data, offset, size);
-                    currentCodec.queueInputBuffer(index, 0, size, presentationTimeUs, flags);
-                } catch (IllegalStateException ignored) {
-                    // The stream or surface is transitioning.
-                }
+            if (newSurface != null && !newSurface.isValid()) {
+                newSurface = null;
+            }
+            if (newSurface == surface && codec != null) {
+                return;
+            }
+            surface = newSurface;
+            releaseCodecLocked();
+            if (surface != null && sps != null) {
+                needKeyFrame = configureLocked();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+        if (needKeyFrame) {
+            requestKeyFrame();
+        }
+    }
+
+    /** Applies a new stream configuration (SPS/PPS) received from the server. */
+    public void configure(int width, int height, ByteBuffer sps, ByteBuffer pps) {
+        lockExclusive();
+        try {
+            if (released) {
+                return;
+            }
+            this.width = width;
+            this.height = height;
+            this.sps = sps;
+            this.pps = pps;
+            releaseCodecLocked();
+            if (surface != null) {
+                // The server sends a key frame right after the configuration packet.
+                configureLocked();
+            }
+        } finally {
+            lock.writeLock().unlock();
+        }
+    }
+
+    /** Queues one encoded frame. Called from the network thread. */
+    public void decode(byte[] data, int size, long presentationTimeUs, boolean keyFrame) {
+        if (released) {
+            return;
+        }
+        if (codecFailed) {
+            recover();
+        }
+        if (waitingForKeyFrame && !keyFrame) {
+            return;
+        }
+        boolean dropped = false;
+        boolean failed = false;
+        lock.readLock().lock();
+        try {
+            MediaCodec current = codec;
+            if (current == null) {
+                return;
+            }
+            int index = -1;
+            for (int attempt = 0; attempt < INPUT_ATTEMPTS && index < 0 && !released
+                    && exclusiveWaiters.get() == 0; ++attempt) {
+                index = current.dequeueInputBuffer(INPUT_TIMEOUT_US);
+            }
+            if (index < 0) {
+                dropped = true;
+                return;
+            }
+            ByteBuffer buffer = current.getInputBuffer(index);
+            if (buffer == null || size > buffer.capacity()) {
+                current.queueInputBuffer(index, 0, 0, presentationTimeUs, 0);
+                dropped = true;
+                return;
+            }
+            buffer.clear();
+            buffer.put(data, 0, size);
+            current.queueInputBuffer(index, 0, size, presentationTimeUs,
+                    keyFrame ? MediaCodec.BUFFER_FLAG_KEY_FRAME : 0);
+            if (keyFrame) {
+                waitingForKeyFrame = false;
+            }
+        } catch (IllegalStateException e) {
+            // Includes MediaCodec.CodecException.
+            Log.w(TAG, "Decoder input failed", e);
+            failed = true;
+        } finally {
+            lock.readLock().unlock();
+            if (dropped && !keyFrame) {
+                // Later frames reference the dropped one: skip until the next key frame.
+                waitingForKeyFrame = true;
+                requestKeyFrame();
+            }
+            if (failed) {
+                codecFailed = true;
             }
         }
+    }
 
-        void pauseDecoding() {
-            paused.set(true);
+    public void release() {
+        released = true; // set first so that the input loop stops waiting for buffers
+        lockExclusive();
+        try {
+            releaseCodecLocked();
+            surface = null;
+        } finally {
+            lock.writeLock().unlock();
         }
+        outputThread.interrupt();
+    }
 
-        void resumeDecoding() {
-            paused.set(false);
+    private void recover() {
+        boolean needKeyFrame = false;
+        lockExclusive();
+        try {
+            if (!codecFailed || released) {
+                return;
+            }
+            codecFailed = false;
+            releaseCodecLocked();
+            if (surface != null && surface.isValid() && sps != null) {
+                needKeyFrame = configureLocked();
+            }
+        } finally {
+            lock.writeLock().unlock();
         }
-
-        void stopDecoding() {
-            running.set(false);
-            interrupt();
+        if (needKeyFrame) {
+            requestKeyFrame();
         }
+    }
 
-        @Override
-        public void run() {
-            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+    private void lockExclusive() {
+        exclusiveWaiters.incrementAndGet();
+        try {
+            lock.writeLock().lock();
+        } finally {
+            exclusiveWaiters.decrementAndGet();
+        }
+    }
+
+    private void requestKeyFrame() {
+        if (keyFrameRequester != null && !released) {
+            keyFrameRequester.requestKeyFrame();
+        }
+    }
+
+    /** Must hold the write lock. Returns true when a codec was created. */
+    private boolean configureLocked() {
+        waitingForKeyFrame = true;
+        if (surface == null || !surface.isValid() || sps == null || pps == null || width <= 0 || height <= 0) {
+            return false;
+        }
+        MediaCodec newCodec = null;
+        try {
+            newCodec = MediaCodec.createDecoderByType(MIME_TYPE);
             try {
-                while (running.get()) {
-                    if (paused.get() || !configured.get()) {
-                        Thread.sleep(10);
-                        continue;
-                    }
-                    synchronized (codecLock) {
-                        MediaCodec currentCodec = codec;
-                        if (currentCodec == null || !configured.get()) {
-                            continue;
-                        }
-                        try {
-                            int index = currentCodec.dequeueOutputBuffer(info, 0);
-                            if (index >= 0) {
-                                currentCodec.releaseOutputBuffer(index, true);
-                                if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
-                                    break;
-                                }
-                            }
-                        } catch (IllegalStateException ignored) {
-                            // A surface transition may briefly invalidate the codec.
-                        }
+                newCodec.configure(createFormat(lowLatencySupported), surface, null, 0);
+            } catch (RuntimeException e) {
+                if (!lowLatencySupported) {
+                    throw e;
+                }
+                // Some vendor decoders reject the low-latency hints: retry without them.
+                Log.w(TAG, "Decoder rejected low-latency configuration; retrying", e);
+                lowLatencySupported = false;
+                newCodec.release();
+                newCodec = MediaCodec.createDecoderByType(MIME_TYPE);
+                newCodec.configure(createFormat(false), surface, null, 0);
+            }
+            newCodec.start();
+            codec = newCodec;
+            return true;
+        } catch (IOException | RuntimeException e) {
+            Log.e(TAG, "Could not create the H.264 decoder", e);
+            if (newCodec != null) {
+                try {
+                    newCodec.release();
+                } catch (RuntimeException ignored) {
+                    // Already failed.
+                }
+            }
+            codec = null;
+            return false;
+        }
+    }
+
+    private MediaFormat createFormat(boolean lowLatency) {
+        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, width, height);
+        format.setByteBuffer("csd-0", sps.duplicate());
+        format.setByteBuffer("csd-1", pps.duplicate());
+        format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, Math.max(width * height, 1024 * 1024));
+        if (lowLatency) {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+                format.setInteger(MediaFormat.KEY_PRIORITY, 0); // real time
+            }
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
+            }
+        }
+        return format;
+    }
+
+    /** Must hold the write lock. */
+    private void releaseCodecLocked() {
+        MediaCodec current = codec;
+        codec = null;
+        if (current == null) {
+            return;
+        }
+        try {
+            current.stop();
+        } catch (RuntimeException ignored) {
+            // The codec may already be in an error state.
+        }
+        try {
+            current.release();
+        } catch (RuntimeException ignored) {
+            // Best effort.
+        }
+    }
+
+    private void drainOutput() {
+        MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
+        while (!released) {
+            boolean idle = false;
+            boolean failed = false;
+            lock.readLock().lock();
+            try {
+                MediaCodec current = codec;
+                if (current == null || codecFailed) {
+                    idle = true;
+                } else {
+                    int index = current.dequeueOutputBuffer(info, OUTPUT_TIMEOUT_US);
+                    if (index >= 0) {
+                        // Render immediately: lowest latency for a live mirror.
+                        current.releaseOutputBuffer(index, info.size > 0);
                     }
                 }
-            } catch (InterruptedException ignored) {
-                Thread.currentThread().interrupt();
+            } catch (IllegalStateException e) {
+                Log.w(TAG, "Decoder output failed", e);
+                failed = true;
             } finally {
-                releaseCodec();
+                lock.readLock().unlock();
+            }
+            if (failed) {
+                codecFailed = true;
+                idle = true;
+            }
+            if (idle) {
+                try {
+                    Thread.sleep(10);
+                } catch (InterruptedException e) {
+                    if (released) {
+                        return;
+                    }
+                }
             }
         }
     }

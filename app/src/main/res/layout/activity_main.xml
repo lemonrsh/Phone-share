@@ -4,6 +4,7 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:fillViewport="true"
+    android:fitsSystemWindows="true"
     android:background="?attr/colorPageBackground"
     tools:context=".MainActivity">
 
@@ -62,7 +63,7 @@
                 android:layout_height="wrap_content"
                 android:hint="@string/hint_server_ip"
                 android:inputType="text"
-                android:maxLength="39"
+                android:maxLength="64"
                 android:singleLine="true"
                 android:minHeight="48dp"
                 android:importantForAutofill="no"

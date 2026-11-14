@@ -18,6 +18,7 @@ public final class AudioDecoder {
     private MediaCodec codec;
     private AudioTrack audioTrack;
     private final MediaCodec.BufferInfo bufferInfo = new MediaCodec.BufferInfo();
+    private byte[] pcmBuffer = new byte[0];
 
     public synchronized void configure(byte[] codecSpecificData) throws IOException {
         releaseCodec();
@@ -28,7 +29,7 @@ public final class AudioDecoder {
         codec.start();
     }
 
-    public synchronized void decode(byte[] encodedSample, long presentationTimeUs) {
+    public synchronized void decode(byte[] encodedSample, int size, long presentationTimeUs) {
         if (codec == null) {
             return;
         }
@@ -36,10 +37,10 @@ public final class AudioDecoder {
             int inputIndex = codec.dequeueInputBuffer(10_000);
             if (inputIndex >= 0) {
                 ByteBuffer inputBuffer = codec.getInputBuffer(inputIndex);
-                if (inputBuffer != null && encodedSample.length <= inputBuffer.capacity()) {
+                if (inputBuffer != null && size <= inputBuffer.capacity()) {
                     inputBuffer.clear();
-                    inputBuffer.put(encodedSample);
-                    codec.queueInputBuffer(inputIndex, 0, encodedSample.length, presentationTimeUs, 0);
+                    inputBuffer.put(encodedSample, 0, size);
+                    codec.queueInputBuffer(inputIndex, 0, size, presentationTimeUs, 0);
                 } else {
                     codec.queueInputBuffer(inputIndex, 0, 0, presentationTimeUs, 0);
                 }
@@ -66,9 +67,11 @@ public final class AudioDecoder {
                 if (outputBuffer != null && bufferInfo.size > 0 && audioTrack != null) {
                     outputBuffer.position(bufferInfo.offset);
                     outputBuffer.limit(bufferInfo.offset + bufferInfo.size);
-                    byte[] pcm = new byte[bufferInfo.size];
-                    outputBuffer.get(pcm);
-                    audioTrack.write(pcm, 0, pcm.length);
+                    if (pcmBuffer.length < bufferInfo.size) {
+                        pcmBuffer = new byte[bufferInfo.size];
+                    }
+                    outputBuffer.get(pcmBuffer, 0, bufferInfo.size);
+                    audioTrack.write(pcmBuffer, 0, bufferInfo.size);
                 }
             } finally {
                 codec.releaseOutputBuffer(outputIndex, false);

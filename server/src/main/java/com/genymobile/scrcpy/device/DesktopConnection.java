@@ -1,6 +1,7 @@
 package com.genymobile.scrcpy.device;
 
 import com.genymobile.scrcpy.control.ControlChannel;
+import com.genymobile.scrcpy.util.Ln;
 import com.genymobile.scrcpy.util.StringUtils;
 
 import android.net.LocalServerSocket;
@@ -11,10 +12,12 @@ import java.io.Closeable;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 
 /**
  * The upstream scrcpy connection normally uses adb forward/reverse and Android
@@ -149,13 +152,53 @@ public final class DesktopConnection implements Closeable {
     private static Channel acceptTcpChannel(ServerSocket serverSocket, String allowedClientIp) throws IOException {
         while (true) {
             Socket socket = serverSocket.accept();
-            if (allowedClientIp != null && !allowedClientIp.isEmpty()
-                    && !allowedClientIp.equals(socket.getInetAddress().getHostAddress())) {
+            if (!isAllowedClient(socket.getInetAddress(), allowedClientIp)) {
+                Ln.w("Rejecting connection from unexpected client " + socket.getInetAddress().getHostAddress());
                 socket.close();
                 continue;
             }
             return new Channel(socket);
         }
+    }
+
+    private static boolean isAllowedClient(InetAddress client, String allowedClientIp) {
+        if (allowedClientIp == null || allowedClientIp.isEmpty()) {
+            return true;
+        }
+        if (client == null) {
+            return false;
+        }
+        String clientText = client.getHostAddress();
+        int scope = clientText.indexOf('%');
+        if (scope >= 0) {
+            clientText = clientText.substring(0, scope);
+        }
+        if (allowedClientIp.equalsIgnoreCase(clientText)) {
+            return true;
+        }
+        try {
+            // Compare raw addresses so that equivalent textual forms (and IPv4-mapped IPv6) match.
+            byte[] expected = toIpv4IfMapped(InetAddress.getByName(allowedClientIp).getAddress());
+            byte[] actual = toIpv4IfMapped(client.getAddress());
+            return Arrays.equals(expected, actual);
+        } catch (IOException | RuntimeException e) {
+            return false;
+        }
+    }
+
+    private static byte[] toIpv4IfMapped(byte[] address) {
+        if (address.length != 16) {
+            return address;
+        }
+        for (int i = 0; i < 10; ++i) {
+            if (address[i] != 0) {
+                return address;
+            }
+        }
+        if (address[10] != (byte) 0xff || address[11] != (byte) 0xff) {
+            return address;
+        }
+        return Arrays.copyOfRange(address, 12, 16);
     }
 
     private static DesktopConnection openLocalSocket(int scid, boolean tunnelForward, boolean video, boolean audio, boolean control,
