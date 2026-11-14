@@ -144,7 +144,7 @@
     <string name="switch_show_touches">Show touch indicators on the remote device</string>
     <string name="scrcpy_latest_note">Bundled upstream server: v5.0.1. Audio needs Android 11 or newer on the target device. Desktop-only flags (recording, window settings, USB/OTG, HID keyboard/mouse) are not part of this Android viewer.</string>
     <string name="floating_mode_note">Choose a YouTube-style floating player or full-screen mirroring. Android may ask for permission to display over other apps.</string>
-    <string name="audio_note">Audio is off by default. Enable it to play the target device audio on this device.</string>
+    <string name="audio_note">Audio is on by default: the other device\'s sound plays on this phone. Turn it off to save data.</string>
     <string name="control_note">No control disables remote touch, key, wake-on-connect and turn-screen-off-on-connect commands. Power off on close remains a server cleanup option.</string>
 
     <string-array name="options_resolution_values">
@@ -171,6 +171,9 @@
     </string-array>
     <string name="resolution_note">⭐ 480p is recommended: smoothest picture with the least delay and data, especially over mobile data or a share code. Pick a higher size only on fast Wi-Fi.</string>
     <string name="action_clear">Clear</string>
+    <string name="action_recommended">↺ Use recommended settings</string>
+    <string name="recommended_note">Recommended: 480p, 1 Mbps, 30 fps, H.264, audio on both devices.</string>
+    <string name="recommended_restored">Recommended settings restored</string>
     <string name="address_cleared">Address cleared</string>
 
     <string-array name="options_bitrate_keys">

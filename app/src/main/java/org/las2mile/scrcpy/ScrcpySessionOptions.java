@@ -47,9 +47,9 @@ public final class ScrcpySessionOptions {
     public boolean showTouches;
     public boolean floatingWindow;
     public boolean navBar;
-    public int maxSize = 1280;
-    public int videoBitRate = 2_048_000;
-    public int maxFps = 60;
+    public int maxSize = 854;
+    public int videoBitRate = 1_024_000;
+    public int maxFps = 30;
     /** "h264", "h265" or "av1". */
     public String videoCodec = "h264";
     /** "aac", "opus", "flac" or "raw". */

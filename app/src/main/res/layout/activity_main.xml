@@ -442,6 +442,27 @@
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="8dp"
+                android:text="@string/recommended_note"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/button_recommended"
+                style="?android:attr/borderlessButtonStyle"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:minHeight="40dp"
+                android:paddingStart="0dp"
+                android:text="@string/action_recommended"
+                android:textAllCaps="false"
+                android:textColor="?attr/colorOptionsAccent"
+                android:textSize="14sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="8dp"
                 android:text="@string/section_video"
                 android:textColor="?attr/colorTextPrimary"
                 android:textSize="15sp"

@@ -21,7 +21,7 @@ Every release is built from the same source in two editions (Gradle product flav
 - Full-screen mirroring or a YouTube-style floating player (see below).
 - Green interface (light and dark), so the white status-bar icons are always readable.
 - **Clear** button next to the address box empties the IP address or share code.
-- Video size **480p (854x480) is recommended** and is the default for new installs (smoothest, least delay and data); a note under the size picker says so. Saved choices are kept.
+- **Recommended defaults**: 480p (854x480), 1 Mbps, 30 fps, H.264, audio on and playing on both devices (`--audio-dup`). They are applied once when updating to r14; after that every change is remembered. **↺ Use recommended settings** in the Normal box restores them at any time.
 - Light and dark settings screens.
 - Selectable maximum video size, bitrate and frame rate.
 - All scrcpy options in one **green options box**: the original video size/bitrate/frame rate, audio, no-control, wake/screen-power, stay-awake and show-touches settings, plus collapsible groups for every other scrcpy v5.0.1 server option that makes sense on a phone:
