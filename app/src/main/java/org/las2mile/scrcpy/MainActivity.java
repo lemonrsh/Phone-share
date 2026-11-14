@@ -48,6 +48,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static final String PREFERENCE_DARK_MODE = "dark_mode";
     private static final String PREFERENCE_FLOATING_WINDOW = "floating_window";
     private static final String PREFERENCE_LOCAL_ADB_PERSIST = "local_adb_persist";
+    private static final String PREFERENCE_AUTO_FLOAT = "auto_float";
+    private static final String PREFERENCE_AUDIO_DUP = "Audio Dup";
+    private static final String PREFERENCE_KEEP_ACTIVE = "Keep Active";
     private static final long BACK_PRESS_INTERVAL_MS = 1_500;
 
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
@@ -156,6 +159,39 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
                     android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
         }
         view.setText(spannable);
+        updateConnectButton();
+    }
+
+    /** The top button says Disconnect while a session (e.g. the floating window) is active. */
+    private void updateConnectButton() {
+        Button button = findViewById(R.id.button_start);
+        if (button == null || launcher != null) {
+            return; // our own connection attempt shows "Connecting…"
+        }
+        boolean active = isSessionActive();
+        button.setEnabled(true);
+        button.setText(active ? R.string.action_disconnect : R.string.action_start);
+        button.setBackgroundResource(active ? R.drawable.bg_disconnect_button : R.drawable.bg_start_button);
+    }
+
+    private static boolean isSessionActive() {
+        SessionState.Status status = SessionState.getStatus();
+        return status == SessionState.Status.CONNECTED || status == SessionState.Status.CONNECTING;
+    }
+
+    /** Ends the session running in the floating window. */
+    private void disconnectSession() {
+        try {
+            stopService(new Intent(this, FloatService.class));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not stop the floating window", e);
+        }
+        SessionHandoff.Item pending = SessionHandoff.take();
+        if (pending != null) {
+            pending.client.stop();
+        }
+        SessionState.disconnected(null);
+        Toast.makeText(this, R.string.toast_disconnected, Toast.LENGTH_SHORT).show();
     }
 
     private static String shorten(String text, int max) {
@@ -326,6 +362,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (launcher != null) {
             return; // already connecting
         }
+        if (isSessionActive()) {
+            disconnectSession();
+            return;
+        }
         if (!readSettings()) {
             return;
         }
@@ -387,6 +427,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             startButton.setEnabled(true);
             startButton.setText(R.string.action_start);
         }
+        updateConnectButton();
     }
 
     private void showFloatingWindow() {
@@ -432,6 +473,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         final Switch powerOffOnCloseSwitch = findViewById(R.id.switch_power_off_on_close);
         final Switch stayAwakeSwitch = findViewById(R.id.switch_stay_awake);
         final Switch showTouchesSwitch = findViewById(R.id.switch_show_touches);
+        final Switch audioDupSwitch = findViewById(R.id.switch_audio_dup);
+        final Switch keepActiveSwitch = findViewById(R.id.switch_keep_active);
+        final Switch autoFloatSwitch = findViewById(R.id.switch_auto_float);
+        migrateMovedOptions(preferences);
 
         editTextServerHost.setText(preferences.getString("Server Address", ""));
         darkModeSwitch.setChecked(preferences.getBoolean(PREFERENCE_DARK_MODE, false));
@@ -444,6 +489,24 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         powerOffOnCloseSwitch.setChecked(preferences.getBoolean("Power Off On Close", false));
         stayAwakeSwitch.setChecked(preferences.getBoolean("Stay Awake", false));
         showTouchesSwitch.setChecked(preferences.getBoolean("Show Touches", false));
+        audioDupSwitch.setChecked(preferences.getBoolean(PREFERENCE_AUDIO_DUP, false));
+        keepActiveSwitch.setChecked(preferences.getBoolean(PREFERENCE_KEEP_ACTIVE, false));
+        autoFloatSwitch.setChecked(preferences.getBoolean(PREFERENCE_AUTO_FLOAT, true));
+        // Remember the address as it is typed, not only when connecting.
+        editTextServerHost.addTextChangedListener(new android.text.TextWatcher() {
+            @Override
+            public void beforeTextChanged(CharSequence s, int start, int count, int after) {
+            }
+
+            @Override
+            public void onTextChanged(CharSequence s, int start, int before, int count) {
+            }
+
+            @Override
+            public void afterTextChanged(android.text.Editable s) {
+                getPreferences().edit().putString("Server Address", s.toString().trim()).apply();
+            }
+        });
 
         setSpinner(R.array.options_resolution_values, R.id.spinner_video_resolution, PREFERENCE_SPINNER_RESOLUTION, 2);
         setSpinner(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, PREFERENCE_SPINNER_BITRATE, 2);
@@ -458,7 +521,20 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             }
         });
         bindSwitch(navSwitch, "Nav Switch");
-        bindSwitch(audioSwitch, "Audio");
+        audioSwitch.setOnCheckedChangeListener((button, checked) -> {
+            getPreferences().edit().putBoolean("Audio", checked).apply();
+            if (!checked) {
+                audioDupSwitch.setChecked(false); // nothing to duplicate without audio
+            }
+        });
+        audioDupSwitch.setOnCheckedChangeListener((button, checked) -> {
+            getPreferences().edit().putBoolean(PREFERENCE_AUDIO_DUP, checked).apply();
+            if (checked) {
+                audioSwitch.setChecked(true);
+            }
+        });
+        bindSwitch(keepActiveSwitch, PREFERENCE_KEEP_ACTIVE);
+        bindSwitch(autoFloatSwitch, PREFERENCE_AUTO_FLOAT);
         bindSwitch(powerOnSwitch, "Power On");
         bindSwitch(turnScreenOffSwitch, "Turn Screen Off");
         bindSwitch(powerOffOnCloseSwitch, "Power Off On Close");
@@ -470,6 +546,25 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             getPreferences().edit().putBoolean(PREFERENCE_DARK_MODE, checked).apply();
             recreate();
         });
+    }
+
+    /** audio_dup and keep_active moved from the Advanced box to Normal: keep earlier choices. */
+    private static void migrateMovedOptions(SharedPreferences preferences) {
+        SharedPreferences.Editor editor = preferences.edit();
+        boolean changed = false;
+        String[][] moved = {{"adv_audio_dup", PREFERENCE_AUDIO_DUP}, {"adv_keep_active", PREFERENCE_KEEP_ACTIVE}};
+        for (String[] entry : moved) {
+            if (preferences.contains(entry[0])) {
+                if (!preferences.contains(entry[1])) {
+                    editor.putBoolean(entry[1], Boolean.parseBoolean(preferences.getString(entry[0], "false")));
+                }
+                editor.remove(entry[0]);
+                changed = true;
+            }
+        }
+        if (changed) {
+            editor.apply();
+        }
     }
 
     private static void applyNoControlState(boolean noControl, Switch navSwitch, Switch powerOnSwitch,
@@ -569,6 +664,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             Toast.makeText(this, error, Toast.LENGTH_LONG).show();
             return false;
         }
+        AdvancedOptions.applyNormal(options, isChecked(R.id.switch_audio_dup), isChecked(R.id.switch_keep_active));
         if (!org.las2mile.scrcpy.decoder.Codecs.hasDecoder(org.las2mile.scrcpy.decoder.Codecs.videoMime(options.videoCodec))) {
             Toast.makeText(this, getString(R.string.codec_unsupported,
                     org.las2mile.scrcpy.decoder.Codecs.describeId(org.las2mile.scrcpy.decoder.Codecs.videoId(options.videoCodec)),
@@ -722,7 +818,60 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     public void onDisconnected(String message) {
         if (mirroring) {
             stopMirroring(message);
+        } else if (isSessionActive()) {
+            // The session ended while being handed to the floating window.
+            SessionState.disconnected(message);
         }
+    }
+
+    // ---------------------------------------------------------------- auto floating window
+
+    /** Home, Recents or another app: continue the mirror in the floating window. */
+    @Override
+    protected void onUserLeaveHint() {
+        super.onUserLeaveHint();
+        if (mirroring && client != null && client.isConnected()
+                && getPreferences().getBoolean(PREFERENCE_AUTO_FLOAT, true)) {
+            moveSessionToFloatingWindow();
+        }
+    }
+
+    private void moveSessionToFloatingWindow() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M && !Settings.canDrawOverlays(this)) {
+            Toast.makeText(this, R.string.auto_float_needs_permission, Toast.LENGTH_LONG).show();
+            return;
+        }
+        ScrcpyClient current = client;
+        unregisterProximity();
+        clipboardSync.stop();
+        client = null;
+        if (surfaceView != null) {
+            surfaceView.getHolder().removeCallback(this);
+            surfaceView.setOnTouchListener(null);
+        }
+        // This activity's Surface goes away now: stop rendering into it before handing over.
+        current.setSurface(null);
+        SessionHandoff.put(current, sessionOptions.copy(), currentHost);
+        Intent intent = new Intent(this, FloatService.class).setAction(FloatService.ACTION_ADOPT);
+        try {
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(intent);
+            } else {
+                startService(intent);
+            }
+        } catch (RuntimeException e) {
+            Log.e(TAG, "Could not move the session to the floating window", e);
+            SessionHandoff.Item item = SessionHandoff.take();
+            if (item != null) {
+                item.client.stop();
+            }
+            SessionState.disconnected("Could not open the floating window");
+        }
+        DiagnosticLog.i("app", "Leaving the app: moving the mirror to the floating window");
+        getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+        setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
+        showSystemUi();
+        showSettings();
     }
 
     @Override

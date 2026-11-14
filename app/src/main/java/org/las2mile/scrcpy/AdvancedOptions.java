@@ -133,7 +133,7 @@ public final class AdvancedOptions {
                 "aac", new String[] {"AAC", "Opus", "FLAC (lossless)", "Raw PCM"},
                 new String[] {"aac", "opus", "flac", "raw"}, null, null));
         s.add(choice("audio_source", GROUP_AUDIO, "Audio source",
-                "What to capture on the target. \"Playback\" (Android 13+) can keep audio playing there too.",
+                "What to capture on the target. \"Play audio on both devices\" (Normal) uses App playback automatically.",
                 "output",
                 new String[] {"Device output", "App playback (Android 13+)", "Microphone",
                         "Microphone (unprocessed)", "Microphone (camcorder)", "Microphone (voice recognition)",
@@ -143,9 +143,6 @@ public final class AdvancedOptions {
                         "mic-voice-recognition", "mic-voice-communication", "voice-call", "voice-call-uplink",
                         "voice-call-downlink", "voice-performance"},
                 "audio_source", "output"));
-        s.add(sw("audio_dup", GROUP_AUDIO, "Keep playing audio on the target",
-                "Duplicate audio instead of muting it on the target. Needs the \"App playback\" source.",
-                false, "audio_dup"));
         s.add(choice("audio_bit_rate", GROUP_AUDIO, "Audio bitrate", "Ignored for FLAC and raw.",
                 "128000", new String[] {"64 kbps", "96 kbps", "128 kbps (default)", "192 kbps", "256 kbps", "320 kbps"},
                 new String[] {"64000", "96000", "128000", "192000", "256000", "320000"},
@@ -165,9 +162,6 @@ public final class AdvancedOptions {
         s.add(number(KEY_SCREEN_OFF_TIMEOUT, GROUP_CONTROL, "Screen-off timeout (seconds)",
                 "Temporarily change the target's screen timeout while connected. Empty = unchanged.",
                 null, "300"));
-        s.add(sw("keep_active", GROUP_CONTROL, "Keep the target active",
-                "Periodically signal user activity so the target never locks while mirroring.", false,
-                "keep_active"));
         s.add(number(KEY_TIME_LIMIT, GROUP_CONTROL, "Time limit (seconds)",
                 "Disconnect automatically after this time. Empty = no limit.", null, "600"));
         s.add(sw("cleanup", GROUP_CONTROL, "Clean up on exit",
@@ -377,6 +371,24 @@ public final class AdvancedOptions {
         options.extraArgs.clear();
         options.extraArgs.putAll(args);
         return null;
+    }
+
+    /**
+     * Applies the switches of the Normal box that map to server options. Call after
+     * {@link #apply}, which resets the extra arguments.
+     *
+     * @param audioDup   scrcpy --audio-dup: keep audio playing on the target too. It only works
+     *                   with the "playback" audio source (Android 13+), so that source is forced.
+     * @param keepActive keep the target's screen awake by signalling user activity.
+     */
+    public static void applyNormal(ScrcpySessionOptions options, boolean audioDup, boolean keepActive) {
+        if (audioDup && options.audioEnabled) {
+            options.extraArgs.put("audio_source", "playback");
+            options.extraArgs.put("audio_dup", "true");
+        }
+        if (keepActive) {
+            options.extraArgs.put("keep_active", "true");
+        }
     }
 
     /** Lower-case, trimmed; used for codec names coming from preferences. */

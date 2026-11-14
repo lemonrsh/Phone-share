@@ -16,7 +16,10 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
   - **Virtual display**: new display (size/dpi), destroy content, system decorations, IME policy.
   - **Advanced**: server log level.
   Values are validated before anything is sent to the target. Desktop-only flags (recording, window options, USB/OTG, HID keyboard/mouse) are not included.
-- The main screen shows the connection state (**Connected to …** / **Disconnected**), and a message appears when a session connects or ends, in full-screen and floating mode.
+- **Auto floating window**: while mirroring full screen, pressing Home, opening Recents or switching apps moves the live session into the floating window without reconnecting (can be turned off under Appearance and window).
+- Options are split into a green **Normal** box (everyday settings, including **Play audio on both devices** = `--audio-dup` and **Keep the remote screen awake** = `--keep-active`) and a blue **Advanced** box.
+- Debug APKs are signed with a fixed project key (`app/debug.keystore`), so updates install over the previous version and keep all saved settings.
+- The main screen shows the connection state (**Connected to …** / **Disconnected**), and a message appears when a session connects or ends, in full-screen and floating mode. While connected, the top button turns into **Disconnect**.
 - **ADB on this device (port 5555)**: shows whether this phone accepts ADB over Wi-Fi and its address, so another device can mirror it. With root, one tap turns it on (optionally across reboots) or off. Without root, Android only allows it from a computer (`adb tcpip 5555`); the app explains the steps.
 - Remote audio playback (AAC, Opus, FLAC or raw) for compatible target devices (Android 11 or newer).
 - Settings are remembered on the phone.

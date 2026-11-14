@@ -63,7 +63,8 @@ public final class ScrcpyClient {
     private final String host;
     private final ScrcpySessionOptions options;
     private final AdbLauncher.Session adbSession;
-    private final Listener listener;
+    /** Swapped when the session moves between full screen and the floating window. */
+    private volatile Listener listener;
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final AtomicBoolean stopped = new AtomicBoolean(false);
@@ -142,6 +143,18 @@ public final class ScrcpyClient {
 
     public boolean isConnected() {
         return connected && running.get();
+    }
+
+    /**
+     * Hands the session to another host (full screen to floating window). Must be called on the
+     * main thread; callbacks already posted are delivered to the new listener.
+     */
+    public void setListener(Listener newListener) {
+        listener = newListener;
+    }
+
+    public ScrcpySessionOptions getOptions() {
+        return options.copy();
     }
 
     /** The target's device name from the handshake (empty before it is known). */
