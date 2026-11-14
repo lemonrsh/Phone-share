@@ -2,125 +2,177 @@ package org.las2mile.scrcpy.decoder;
 
 import android.media.MediaCodec;
 import android.media.MediaFormat;
-import android.os.Build;
 import android.view.Surface;
 
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-public class VideoDecoder {
-    private MediaCodec mCodec;
-    private Worker mWorker;
-    private AtomicBoolean mIsConfigured = new AtomicBoolean(false);
+/** H.264 decoder feeding the local SurfaceView. */
+public final class VideoDecoder {
+    private final Object codecLock = new Object();
+    private final AtomicBoolean configured = new AtomicBoolean(false);
+    private volatile MediaCodec codec;
+    private volatile Worker worker;
 
     public void decodeSample(byte[] data, int offset, int size, long presentationTimeUs, int flags) {
-        if (mWorker != null) {
-            mWorker.decodeSample(data, offset, size, presentationTimeUs, flags);
+        Worker currentWorker = worker;
+        if (currentWorker != null) {
+            currentWorker.decodeSample(data, offset, size, presentationTimeUs, flags);
         }
     }
 
     public void configure(Surface surface, int width, int height, ByteBuffer csd0, ByteBuffer csd1) {
-        if (mWorker != null) {
-            mWorker.configure(surface, width, height, csd0, csd1);
+        Worker currentWorker = worker;
+        if (currentWorker != null) {
+            currentWorker.configure(surface, width, height, csd0, csd1);
         }
     }
 
-
-    public void start() {
-        if (mWorker == null) {
-            mWorker = new Worker();
-            mWorker.setRunning(true);
-            mWorker.start();
+    public synchronized void start() {
+        if (worker == null || !worker.isAlive()) {
+            worker = new Worker();
+            worker.start();
+        } else {
+            worker.resumeDecoding();
         }
     }
 
-    public void stop() {
-        if (mWorker != null) {
-            mWorker.setRunning(false);
-            mWorker = null;
-            mIsConfigured.set(false);
-            mCodec.stop();
+    public void pause() {
+        Worker currentWorker = worker;
+        if (currentWorker != null) {
+            currentWorker.pauseDecoding();
         }
     }
 
-    private class Worker extends Thread {
+    public void resume() {
+        start();
+    }
 
-        private AtomicBoolean mIsRunning = new AtomicBoolean(false);
+    public synchronized void stop() {
+        Worker currentWorker = worker;
+        worker = null;
+        configured.set(false);
+        if (currentWorker != null) {
+            currentWorker.stopDecoding();
+        }
+    }
+
+    private void releaseCodec() {
+        synchronized (codecLock) {
+            configured.set(false);
+            MediaCodec currentCodec = codec;
+            codec = null;
+            if (currentCodec != null) {
+                try {
+                    currentCodec.stop();
+                } catch (IllegalStateException ignored) {
+                    // The decoder was not started or was already stopped.
+                }
+                currentCodec.release();
+            }
+        }
+    }
+
+    private final class Worker extends Thread {
+        private final AtomicBoolean running = new AtomicBoolean(true);
+        private final AtomicBoolean paused = new AtomicBoolean(false);
 
         Worker() {
+            super("scrcpy-video-decoder");
         }
 
-        private void setRunning(boolean isRunning) {
-            mIsRunning.set(isRunning);
-        }
-
-        private void configure(Surface surface, int width, int height, ByteBuffer csd0, ByteBuffer csd1) {
-            if (mIsConfigured.get()) {
-                mIsConfigured.set(false);
-                mCodec.stop();
-
-            }
-            MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
-            format.setByteBuffer("csd-0", csd0);
-            format.setByteBuffer("csd-1", csd1);
-            try {
-                mCodec = MediaCodec.createDecoderByType("video/avc");
-            } catch (IOException e) {
-                throw new RuntimeException("Failed to create codec", e);
-            }
-            mCodec.configure(format, surface, null, 0);
-            mCodec.start();
-            mIsConfigured.set(true);
-        }
-
-
-        @SuppressWarnings("deprecation")
-        public void decodeSample(byte[] data, int offset, int size, long presentationTimeUs, int flags) {
-            if (mIsConfigured.get() && mIsRunning.get()) {
-                int index = mCodec.dequeueInputBuffer(-1);
-                if (index >= 0) {
-                    ByteBuffer buffer;
-
-                    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.LOLLIPOP) {
-                        buffer = mCodec.getInputBuffers()[index];
-                        buffer.clear();
-                    } else {
-                        buffer = mCodec.getInputBuffer(index);
-                    }
-                    if (buffer != null) {
-                        buffer.put(data, offset, size);
-                        mCodec.queueInputBuffer(index, 0, size, 0, flags);
-                    }
+        void configure(Surface surface, int width, int height, ByteBuffer csd0, ByteBuffer csd1) {
+            synchronized (codecLock) {
+                releaseCodec();
+                MediaFormat format = MediaFormat.createVideoFormat("video/avc", width, height);
+                format.setByteBuffer("csd-0", csd0);
+                format.setByteBuffer("csd-1", csd1);
+                try {
+                    MediaCodec newCodec = MediaCodec.createDecoderByType("video/avc");
+                    newCodec.configure(format, surface, null, 0);
+                    newCodec.start();
+                    codec = newCodec;
+                    configured.set(true);
+                } catch (IOException e) {
+                    throw new RuntimeException("Failed to create H.264 decoder", e);
                 }
             }
+        }
+
+        void decodeSample(byte[] data, int offset, int size, long presentationTimeUs, int flags) {
+            if (!running.get() || paused.get() || !configured.get()) {
+                return;
+            }
+            synchronized (codecLock) {
+                MediaCodec currentCodec = codec;
+                if (currentCodec == null || !configured.get()) {
+                    return;
+                }
+                try {
+                    int index = currentCodec.dequeueInputBuffer(10_000);
+                    if (index < 0) {
+                        return;
+                    }
+                    ByteBuffer buffer = currentCodec.getInputBuffer(index);
+                    if (buffer == null || size > buffer.capacity()) {
+                        currentCodec.queueInputBuffer(index, 0, 0, presentationTimeUs, 0);
+                        return;
+                    }
+                    buffer.clear();
+                    buffer.put(data, offset, size);
+                    currentCodec.queueInputBuffer(index, 0, size, presentationTimeUs, flags);
+                } catch (IllegalStateException ignored) {
+                    // The stream or surface is transitioning.
+                }
+            }
+        }
+
+        void pauseDecoding() {
+            paused.set(true);
+        }
+
+        void resumeDecoding() {
+            paused.set(false);
+        }
+
+        void stopDecoding() {
+            running.set(false);
+            interrupt();
         }
 
         @Override
         public void run() {
+            MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
             try {
-                MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
-                while (mIsRunning.get()) {
-                    if (mIsConfigured.get()) {
-                        int index = mCodec.dequeueOutputBuffer(info, 0);
-                        if (index >= 0) {
-                            // setting true is telling system to render frame onto Surface
-                            mCodec.releaseOutputBuffer(index, true);
-                            if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) == MediaCodec.BUFFER_FLAG_END_OF_STREAM) {
-                                break;
-                            }
+                while (running.get()) {
+                    if (paused.get() || !configured.get()) {
+                        Thread.sleep(10);
+                        continue;
+                    }
+                    synchronized (codecLock) {
+                        MediaCodec currentCodec = codec;
+                        if (currentCodec == null || !configured.get()) {
+                            continue;
                         }
-                    } else {
-                        // just waiting to be configured, then decode and render
                         try {
-                            Thread.sleep(10);
-                        } catch (InterruptedException ignore) {
+                            int index = currentCodec.dequeueOutputBuffer(info, 0);
+                            if (index >= 0) {
+                                currentCodec.releaseOutputBuffer(index, true);
+                                if ((info.flags & MediaCodec.BUFFER_FLAG_END_OF_STREAM) != 0) {
+                                    break;
+                                }
+                            }
+                        } catch (IllegalStateException ignored) {
+                            // A surface transition may briefly invalidate the codec.
                         }
                     }
                 }
-            } catch (IllegalStateException e) {
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            } finally {
+                releaseCodec();
             }
-
         }
     }
 }

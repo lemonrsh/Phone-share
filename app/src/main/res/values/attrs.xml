@@ -1,12 +1,14 @@
 <resources>
+    <attr name="colorPageBackground" format="color" />
+    <attr name="colorCardBackground" format="color" />
+    <attr name="colorTextPrimary" format="color" />
+    <attr name="colorTextSecondary" format="color" />
+    <attr name="colorCardOutline" format="color" />
+    <attr name="colorAccentScrcpy" format="color" />
 
-    <!-- Declare custom theme attributes that allow changing which styles are
-         used for button bars depending on the API level.
-         ?android:attr/buttonBarStyle is new as of API 11 so this is
-         necessary to support previous API levels. -->
+    <!-- Kept for older button bar layouts in the mirrored-screen views. -->
     <declare-styleable name="ButtonBarContainerTheme">
         <attr name="metaButtonBarStyle" format="reference" />
         <attr name="metaButtonBarButtonStyle" format="reference" />
     </declare-styleable>
-
 </resources>

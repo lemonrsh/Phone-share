@@ -1,10 +1,25 @@
 <resources>
-
-    <!-- Base application theme. -->
-    <style name="AppTheme" parent="android:Theme.DeviceDefault.Light.NoActionBar">
-        <!-- Customize your theme here. -->
+    <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#4F46E5</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="colorPageBackground">#F3F5FA</item>
+        <item name="colorCardBackground">#FFFFFF</item>
+        <item name="colorTextPrimary">#172033</item>
+        <item name="colorTextSecondary">#697386</item>
+        <item name="colorCardOutline">#E1E6EF</item>
+        <item name="colorAccentScrcpy">#4F46E5</item>
     </style>
 
-
-
+    <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:colorAccent">#A5B4FC</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="colorPageBackground">#10131B</item>
+        <item name="colorCardBackground">#191E2A</item>
+        <item name="colorTextPrimary">#F3F5FA</item>
+        <item name="colorTextSecondary">#A8B0C0</item>
+        <item name="colorCardOutline">#30394A</item>
+        <item name="colorAccentScrcpy">#6366F1</item>
+    </style>
 </resources>
