@@ -1,0 +1,126 @@
+name: Android APK
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      publish_release:
+        description: Build and publish a GitHub release after the APK checks pass
+        required: true
+        type: boolean
+        default: false
+      release_tag:
+        description: Git tag for the release (for example v5.0.1)
+        required: true
+        type: string
+        default: v5.0.1
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v7
+
+      - name: Set up Java
+        uses: actions/setup-java@v6
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v4
+        with:
+          packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v6.4.1
+
+      - name: Test and build debug and release APKs
+        id: gradle-build
+        continue-on-error: true
+        run: |
+          set -o pipefail
+          ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
+
+      - name: Report Gradle failure details
+        if: ${{ steps.gradle-build.outcome == 'failure' }}
+        run: |
+          python3 - <<'PY'
+          import os
+          from pathlib import Path
+
+          log = Path(os.environ['RUNNER_TEMP'], 'gradle-build.log').read_text(errors='replace')
+          lines = log.splitlines()
+          marker = next((index for index, line in enumerate(lines) if line.strip() == '* What went wrong:'), None)
+          problem = lines[marker:marker + 30] if marker is not None else []
+          diagnostics = [line for line in lines if any(token in line.lower() for token in ('execution failed for task', 'caused by:', 'could not', 'error:', 'failed to'))]
+          details = '\n'.join(problem + diagnostics[-12:] + ['--- last output ---'] + lines[-35:])[-10000:]
+          with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
+              summary.write('### Gradle build failure (diagnostics and last output)\n\n```text\n' + details + '\n```\n')
+          message = ('Gradle build failed. Diagnostics and last output: ' + details).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+          print('::error title=Gradle build failure::' + message)
+          PY
+          exit 1
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v7
+        with:
+          name: scrcpy-android-apks
+          path: |
+            app/build/outputs/apk/debug/*.apk
+            app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+          retention-days: 14
+
+  publish:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.publish_release }}
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download built APKs
+        uses: actions/download-artifact@v8
+        with:
+          name: scrcpy-android-apks
+          path: dist
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ inputs.release_tag }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
+            echo "Invalid release tag: $RELEASE_TAG" >&2
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release $RELEASE_TAG already exists; refusing to overwrite it." >&2
+            exit 1
+          fi
+          release_apk=$(find dist -type f -name '*release*.apk' -print -quit)
+          debug_apk=$(find dist -type f -name '*debug*.apk' -print -quit)
+          if [[ -z "$release_apk" || -z "$debug_apk" ]]; then
+            echo "Expected both release and debug APKs in the downloaded artifact." >&2
+            find dist -type f -print >&2
+            exit 1
+          fi
+          cp "$release_apk" "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk"
+          cp "$debug_apk" "dist/scrcpy-android-${RELEASE_TAG}-debug.apk"
+          gh release create "$RELEASE_TAG" \
+            "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk" \
+            "dist/scrcpy-android-${RELEASE_TAG}-debug.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --title "scrcpy Android $RELEASE_TAG" \
+            --notes "Built from $GITHUB_SHA. The release APK is unsigned unless release signing is configured. The debug-signed APK is included for testing only; its runner-generated debug key is not stable for future updates."
