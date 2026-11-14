@@ -33,7 +33,7 @@ Requirements: JDK 17, Android SDK Platform 36, Android build-tools 36.0.0, and i
 
 The Gradle build compiles the v5.0.1 server module and packages its APK-form server artifact as `scrcpy-server.jar` inside the viewer APK. The debug APK is written under `app/build/outputs/apk/debug/`.
 
-`assembleRelease` currently produces an unsigned release APK. Configure a private signing key in your local Gradle environment before distributing a release build; do not commit signing credentials.
+`assembleRelease` currently produces an unsigned release APK. Configure a private signing key in your local Gradle environment before distributing a release build; do not commit signing credentials. The **Android APK** GitHub Actions workflow builds and tests both APK variants on pull requests and pushes to `main`. Dispatch it manually with **Publish GitHub release** enabled to attach the unsigned release APK and a debug-signed test APK; the CI-generated debug key is not stable for future updates.
 
 ## Licensing
 

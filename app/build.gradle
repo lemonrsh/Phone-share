@@ -27,8 +27,11 @@ android {
     }
 
     sourceSets {
-        main {
-            assets.srcDir "$buildDir/generated/scrcpyServerAssets"
+        debug {
+            assets.srcDir "$buildDir/generated/scrcpyServerAssets/debug"
+        }
+        release {
+            assets.srcDir "$buildDir/generated/scrcpyServerAssets/release"
         }
     }
 }
@@ -38,14 +41,14 @@ android {
 tasks.register('copyScrcpyServerDebug', Copy) {
     dependsOn ':server:assembleDebug'
     from "$rootDir/server/build/outputs/apk/debug/server-debug.apk"
-    into "$buildDir/generated/scrcpyServerAssets"
+    into "$buildDir/generated/scrcpyServerAssets/debug"
     rename { 'scrcpy-server.jar' }
 }
 
 tasks.register('copyScrcpyServerRelease', Copy) {
     dependsOn ':server:assembleRelease'
     from "$rootDir/server/build/outputs/apk/release/server-release-unsigned.apk"
-    into "$buildDir/generated/scrcpyServerAssets"
+    into "$buildDir/generated/scrcpyServerAssets/release"
     rename { 'scrcpy-server.jar' }
 }
 
