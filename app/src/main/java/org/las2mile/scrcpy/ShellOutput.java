@@ -12,6 +12,7 @@ import java.util.regex.Pattern;
 final class ShellOutput {
     private static final int MAX_PENDING_CHARS = 64 * 1024;
     private static final int MAX_RECENT_LINES = 40;
+    private static final Pattern PROMPT = Pattern.compile("^\\s*\\S*:\\S* [$#] ?");
 
     private final StringBuilder pending = new StringBuilder();
     private final ArrayDeque<String> recentLines = new ArrayDeque<>();
@@ -100,11 +101,54 @@ final class ShellOutput {
         return builder.toString();
     }
 
+    /**
+     * The last non-marker lines (server output after the launcher's own
+     * {@code SCRCPY_*} markers), or {@code null} if there are none.
+     */
+    synchronized String lastServerLines(int maxLines) {
+        ArrayDeque<String> lines = new ArrayDeque<>();
+        for (String line : recentLines) {
+            String trimmed = stripPrompt(line);
+            if (trimmed.contains("SCRCPY_")) {
+                // Everything up to the last marker belongs to the launcher, not the server.
+                lines.clear();
+            } else if (!trimmed.isEmpty() && !trimmed.contains("CLASSPATH=")) {
+                lines.addLast(trimmed);
+                if (lines.size() > maxLines) {
+                    lines.removeFirst();
+                }
+            }
+        }
+        String partial = stripPrompt(currentLine.toString());
+        if (!partial.isEmpty() && !partial.contains("SCRCPY_")) {
+            lines.addLast(partial);
+            if (lines.size() > maxLines) {
+                lines.removeFirst();
+            }
+        }
+        if (lines.isEmpty()) {
+            return null;
+        }
+        StringBuilder builder = new StringBuilder();
+        for (String line : lines) {
+            if (builder.length() > 0) {
+                builder.append(" / ");
+            }
+            builder.append(line);
+        }
+        return builder.toString();
+    }
+
+    /** Removes a leading shell prompt such as {@code ":/ $ "} or {@code "host:/ # "}. */
+    private static String stripPrompt(String line) {
+        return PROMPT.matcher(line).replaceFirst("").trim();
+    }
+
     /** Most recent server error line, if the server printed one. */
     synchronized String lastErrorLine() {
         String found = null;
         for (String line : recentLines) {
-            String trimmed = line.trim();
+            String trimmed = stripPrompt(line);
             if (trimmed.startsWith("[server] ERROR") || trimmed.startsWith("ERROR")
                     || trimmed.contains("Exception:") || trimmed.startsWith("Aborted")) {
                 found = trimmed;

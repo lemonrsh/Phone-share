@@ -14,6 +14,15 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
 - Rotation and app switching keep the session alive (the decoder is rebuilt on the new surface and a fresh key frame is requested).
 - The floating window runs as a foreground service (with a **Stop** action in its notification) so Android does not stop it in the background.
 
+### Troubleshooting the connection
+
+If anything fails, the floating window stays open and shows the exact reason (swipe it away to close).
+
+- **"ADB is not listening on …"**: ADB over TCP is not running on the target. Run `adb tcpip 5555`, or as root `su -c 'setprop service.adb.tcp.port 5555; stop adbd; start adbd'`.
+- **"The target hung up during ADB authorization"** / **"Timed out waiting for ADB authorization"**: the target has not accepted this phone's ADB key. Unlock the target, keep **USB debugging** enabled and tap **Allow** on the *Allow USB debugging?* prompt. If no prompt appears, use *Developer options → Revoke USB debugging authorizations* and try again. On a rooted target, tap **Connection keeps failing? Authorize with root…** in the app and run the copied command on the target.
+- Android 11+ **Wireless debugging** pairing codes and ports are **not supported**. Use classic ADB over TCP on port 5555 instead.
+- **"The scrcpy server stopped: …"**: ADB worked, but the server exited on the target. The message includes the server's last output.
+
 ### Floating player
 
 The floating window behaves like YouTube's picture-in-picture popup:

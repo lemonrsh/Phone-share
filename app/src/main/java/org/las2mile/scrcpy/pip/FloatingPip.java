@@ -165,6 +165,14 @@ public final class FloatingPip implements PipView.Listener {
         pipView.showLoading(show);
     }
 
+    /** Shows an error in the window, enlarged so that the text is readable. */
+    public void showError(String message) {
+        pipView.showError(message);
+        if (!dismissing && areaFraction < LARGE_AREA) {
+            animateResize(LARGE_AREA);
+        }
+    }
+
     /** Adapts the window to the remote screen's aspect ratio (smoothly). */
     public void setVideoSize(int width, int height) {
         if (width <= 0 || height <= 0) {

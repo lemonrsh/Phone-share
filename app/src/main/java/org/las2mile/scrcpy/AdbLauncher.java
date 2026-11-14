@@ -89,6 +89,31 @@ public final class AdbLauncher {
         closeQuietly(currentSocket);
     }
 
+    /** Shown when adbd hangs up during the handshake, which almost always means the key was not accepted. */
+    static final String AUTH_CLOSED_MESSAGE = "The target hung up during ADB authorization, so it did not "
+            + "accept this phone's ADB key. On the target: unlock it, keep USB debugging ON, and tap Allow on the "
+            + "\"Allow USB debugging?\" prompt. No prompt? Developer options > Revoke USB debugging "
+            + "authorizations, restart adbd, try again. Rooted target: use \"Copy ADB key\" and add it to "
+            + "/data/misc/adb/adb_keys.";
+
+    /**
+     * This phone's ADB public key as one {@code adb_keys} line, so that it can
+     * be authorized manually on a rooted target.
+     */
+    public static String publicKeyLine(Context context) throws LaunchException {
+        AdbCrypto crypto = loadCrypto(context.getApplicationContext());
+        try {
+            String payload = new String(crypto.getAdbPublicKeyPayload(), StandardCharsets.UTF_8);
+            int nul = payload.indexOf('\0');
+            if (nul >= 0) {
+                payload = payload.substring(0, nul);
+            }
+            return payload.replace(" unknown@unknown", " scrcpy@android").trim();
+        } catch (IOException e) {
+            throw new LaunchException("Could not read this phone's ADB key.", e);
+        }
+    }
+
     public Session launch(Context context, HostAddress address, ScrcpySessionOptions options) throws LaunchException {
         Context appContext = context.getApplicationContext();
         byte[] server = loadServer(appContext);
@@ -131,13 +156,13 @@ public final class AdbLauncher {
             } catch (AdbAuthenticationFailedException e) {
                 throw new LaunchException("The target rejected this device's ADB key.", e);
             } catch (IOException e) {
-                throw new LaunchException(isCancelled() ? "Connection cancelled"
-                        : "The target closed the ADB connection. Make sure ADB debugging is enabled and "
-                        + "accept the \"Allow debugging\" prompt on the target.", e);
+                throw new LaunchException(isCancelled() ? "Connection cancelled" : AUTH_CLOSED_MESSAGE, e);
             }
             if (!connected) {
-                throw new LaunchException("Timed out waiting for ADB authorization. Accept the "
-                        + "\"Allow debugging\" prompt on the target device and try again.");
+                throw new LaunchException("Timed out waiting for ADB authorization. Unlock the target and tap "
+                        + "Allow on the \"Allow USB debugging?\" prompt within 60 s. Android 11+ "
+                        + "\"Wireless debugging\" pairing ports are not supported: use port 5555 "
+                        + "(adb tcpip 5555 or setprop service.adb.tcp.port 5555).");
             }
 
             AdbStream stream = connection.open("shell:");
@@ -365,6 +390,10 @@ public final class AdbLauncher {
         /** A short description of why the server stopped, if it printed one. */
         public String describeServerFailure() {
             String error = output.lastErrorLine();
+            if (error == null) {
+                // No recognizable error line: show what the server printed last (e.g. "Killed").
+                error = output.lastServerLines(3);
+            }
             if (error != null) {
                 return error.length() > 300 ? error.substring(0, 300) + "…" : error;
             }

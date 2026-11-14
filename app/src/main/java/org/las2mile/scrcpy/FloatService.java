@@ -39,7 +39,10 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     private static final String CHANNEL_ID = "floating_mirror";
     private static final int NOTIFICATION_ID = 1;
 
+    private static final long ERROR_AUTO_CLOSE_MS = 60_000;
+
     private final Handler mainHandler = new Handler(Looper.getMainLooper());
+    private final Runnable autoClose = this::stopSelf;
     private FloatingPip pip;
     private boolean pipControlEnabled;
     private Surface surface;
@@ -75,6 +78,7 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         sessionOptions = ScrcpySessionOptions.fromIntent(intent);
 
         // A new start request replaces any running session.
+        mainHandler.removeCallbacks(autoClose);
         stopSession();
         if (pip != null && pipControlEnabled == sessionOptions.noControl) {
             // The gesture layout depends on whether remote control is enabled.
@@ -123,8 +127,7 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         }
         launcher = null;
         if (session == null) {
-            showToast(error == null ? "Connection failed" : error);
-            stopSelf();
+            showFailure(error == null ? "Connection failed" : error);
             return;
         }
         client = new ScrcpyClient(address.host, options, session, this);
@@ -154,8 +157,24 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     @Override
     public void onDisconnected(String message) {
         client = null;
-        showToast(message);
-        stopSelf();
+        showFailure(message);
+    }
+
+    /**
+     * Keeps the floating window open with the error instead of closing it with a
+     * short toast, so the reason can actually be read. Swipe away (or wait) to close.
+     */
+    private void showFailure(String message) {
+        String text = message == null ? "Disconnected." : message;
+        Log.w(TAG, "Session failed: " + text);
+        if (pip == null) {
+            showToast(text);
+            stopSelf();
+            return;
+        }
+        pip.showError(text);
+        mainHandler.removeCallbacks(autoClose);
+        mainHandler.postDelayed(autoClose, ERROR_AUTO_CLOSE_MS);
     }
 
     // ---------------------------------------------------------------- FloatingPip.Callbacks
