@@ -1,5 +1,8 @@
 <resources>
     <attr name="colorPageBackground" format="color" />
+    <!-- Text drawn directly on the (green) page background. -->
+    <attr name="colorOnPage" format="color" />
+    <attr name="colorOnPageSecondary" format="color" />
     <attr name="colorCardBackground" format="color" />
     <attr name="colorTextPrimary" format="color" />
     <attr name="colorTextSecondary" format="color" />

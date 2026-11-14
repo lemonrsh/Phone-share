@@ -187,10 +187,10 @@ jobs:
               exit 1
             fi
           done
-          cp "$(pick 'app-standard-release*.apk')" "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk"
-          cp "$(pick 'app-standard-debug.apk')" "dist/scrcpy-android-${RELEASE_TAG}-debug.apk"
-          cp "$(pick 'app-cloudflared-release*.apk')" "dist/scrcpy-android-${CF_TAG}-unsigned.apk"
-          cp "$(pick 'app-cloudflared-debug.apk')" "dist/scrcpy-android-${CF_TAG}-debug.apk"
+          cp "$(pick 'app-standard-release*.apk')" "dist/phone-share-${RELEASE_TAG}-unsigned.apk"
+          cp "$(pick 'app-standard-debug.apk')" "dist/phone-share-${RELEASE_TAG}-debug.apk"
+          cp "$(pick 'app-cloudflared-release*.apk')" "dist/phone-share-${CF_TAG}-unsigned.apk"
+          cp "$(pick 'app-cloudflared-debug.apk')" "dist/phone-share-${CF_TAG}-debug.apk"
           extra=()
           latest=(--latest)
           if [[ "$PRERELEASE" == "true" ]]; then
@@ -200,17 +200,17 @@ jobs:
           install_note="Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings (from 5.0.1-r9 on). The release APK is unsigned unless release signing is configured. The standard and cloudflared editions share the same app id and key, so you can switch between them by installing the other one."
           # Cloudflared edition first, so that the standard edition ends up as the latest release.
           gh release create "$CF_TAG" "${extra[@]}" \
-            "dist/scrcpy-android-${CF_TAG}-unsigned.apk" \
-            "dist/scrcpy-android-${CF_TAG}-debug.apk" \
+            "dist/phone-share-${CF_TAG}-unsigned.apk" \
+            "dist/phone-share-${CF_TAG}-debug.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --latest=false \
-            --title "scrcpy Android $CF_TAG (with Cloudflare sharing)" \
+            --title "Phone Share $CF_TAG (with Cloudflare sharing)" \
             --notes "Cloudflared edition, built from $GITHUB_SHA: everything in the standard edition plus \"Share this phone over the internet\" (bundled cloudflared for arm64-v8a, armeabi-v7a and x86_64) and connecting with share codes. Same source as $RELEASE_TAG. $install_note"
           gh release create "$RELEASE_TAG" "${extra[@]}" "${latest[@]}" \
-            "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk" \
-            "dist/scrcpy-android-${RELEASE_TAG}-debug.apk" \
+            "dist/phone-share-${RELEASE_TAG}-unsigned.apk" \
+            "dist/phone-share-${RELEASE_TAG}-debug.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "scrcpy Android $RELEASE_TAG" \
+            --title "Phone Share $RELEASE_TAG" \
             --notes "Standard edition (no Cloudflare), built from $GITHUB_SHA. Same source as $CF_TAG, which adds Cloudflare sharing. $install_note"

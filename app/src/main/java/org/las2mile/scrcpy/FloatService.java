@@ -447,7 +447,7 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
 
         return builder
                 .setSmallIcon(R.drawable.ic_notification)
-                .setContentTitle(getString(R.string.notification_title)) // "scrcpy is running"
+                .setContentTitle(getString(R.string.notification_title)) // "Phone Share is running"
                 .setContentText(notificationText != null ? notificationText : getString(R.string.notification_text))
                 .setContentIntent(openPendingIntent)
                 .setOngoing(true)

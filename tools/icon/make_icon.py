@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
-"""Generates the launcher icon: adaptive vector layers + legacy PNG mipmaps.
+"""Generates the Phone Share launcher icon: adaptive vector layers + legacy PNG mipmaps.
+
+Two phones; the front one shows the share glyph (three connected dots).
 
 One shape description is rendered both as Android vector drawables (API 26+
 adaptive icon, monochrome themed icon, notification icon) and, with Pillow, as
@@ -25,7 +27,10 @@ FRONT_SHADOW = (51.5, 38, 24, 42, 5.5)
 FRONT_PHONE = (50, 36, 24, 42, 5.5)
 FRONT_SCREEN = (53, 41.5, 18, 30, 2.5)
 SPEAKER = (59, 38.4, 6, 1.6, 0.8)
-PLAY = [(59, 50.5), (59, 62.5), (68.5, 56.5)]
+# Share glyph on the front screen: three dots joined by two lines.
+SHARE_NODES = [(66.2, 49.5), (57.6, 56.5), (66.2, 63.5)]
+NODE_R = 2.9
+LINE_W = 1.8
 
 
 def rr_path(x, y, w, h, r):
@@ -38,6 +43,22 @@ def rr_path(x, y, w, h, r):
 def poly_path(points):
     head, *rest = points
     return "M{:g},{:g}".format(*head) + "".join("L{:g},{:g}".format(*p) for p in rest) + "z"
+
+
+def circle_path(cx, cy, rad):
+    return "M{:g},{:g}a{:g},{:g} 0,1 0,{:g},0a{:g},{:g} 0,1 0,{:g},0z".format(
+        cx - rad, cy, rad, rad, 2 * rad, rad, rad, -2 * rad)
+
+
+def share_paths(color, nodes=None, rad=NODE_R, width=LINE_W):
+    nodes = SHARE_NODES if nodes is None else nodes
+    a, b, c = nodes
+    line = ('    <path\n        android:strokeColor="{}"\n        android:strokeWidth="{:g}"\n'
+            '        android:strokeLineCap="round"\n        android:strokeLineJoin="round"\n'
+            '        android:pathData="M{:g},{:g}L{:g},{:g}L{:g},{:g}" />').format(
+        color, width, a[0], a[1], b[0], b[1], c[0], c[1])
+    dots = path("".join(circle_path(x, y, rad) for x, y in nodes), color)
+    return [line, dots]
 
 
 def vector(paths, size=108, viewport=108, extra_ns=False):
@@ -90,8 +111,7 @@ def write_vectors():
         path(rr_path(*FRONT_PHONE), "#FFFFFFFF"),
         path(rr_path(*FRONT_SCREEN), "#FF16A34A"),
         path(rr_path(*SPEAKER), "#FF16A34A"),
-        path(poly_path(PLAY), "#FFFFFFFF"),
-    ])
+    ] + share_paths("#FFFFFFFF"))
     write("drawable/ic_launcher_foreground.xml", foreground)
 
     # Themed (monochrome) icon: the system tints it, alpha gives the depth.
@@ -100,8 +120,7 @@ def write_vectors():
         # Front phone as an outline (evenOdd cut-out of the screen) with the play mark inside.
         '    <path\n        android:fillColor="#FF000000"\n        android:fillType="evenOdd"\n'
         '        android:pathData="{}" />'.format(rr_path(*FRONT_PHONE) + rr_path(*FRONT_SCREEN)),
-        path(poly_path(PLAY), "#FF000000"),
-    ])
+    ] + share_paths("#FF000000"))
     write("drawable/ic_launcher_monochrome.xml", mono)
 
     # Notification icon (24dp, white silhouette): reuse the front phone, scaled to fill.
@@ -113,13 +132,12 @@ def write_vectors():
     back = t(BACK_PHONE)
     front = t(FRONT_PHONE)
     screen = t(FRONT_SCREEN)
-    play = [((x - ox) * s, (y - oy) * s) for x, y in PLAY]
+    nodes = [((x - ox) * s, (y - oy) * s) for x, y in SHARE_NODES]
     note = vector([
         path(rr_path(*back), "#FFFFFF", 0x80),
         '    <path\n        android:fillColor="#FFFFFFFF"\n        android:fillType="evenOdd"\n'
         '        android:pathData="{}" />'.format(rr_path(*front) + rr_path(*screen)),
-        path(poly_path(play), "#FFFFFFFF"),
-    ], size=24, viewport=24)
+    ] + share_paths("#FFFFFFFF", nodes, NODE_R * s, LINE_W * s), size=24, viewport=24)
     write("drawable/ic_notification.xml", note)
 
     adaptive = ('<?xml version="1.0" encoding="utf-8"?>\n'
@@ -196,7 +214,11 @@ def render(size, round_shape):
     d.rounded_rectangle(box, radius=rad, fill=SCREEN + (255,))
     box, rad = rect(SPEAKER)
     d.rounded_rectangle(box, radius=rad, fill=SCREEN + (255,))
-    d.polygon([m(x, y) for x, y in PLAY], fill=WHITE + (255,))
+    pts = [m(x, y) for x, y in SHARE_NODES]
+    d.line(pts, fill=WHITE + (255,), width=max(1, int(round(LINE_W * scale))), joint="curve")
+    for x, y in pts:
+        rr = NODE_R * scale
+        d.ellipse([x - rr, y - rr, x + rr, y + rr], fill=WHITE + (255,))
     base = Image.alpha_composite(base, layer)
 
     # Keep everything inside the tile shape.

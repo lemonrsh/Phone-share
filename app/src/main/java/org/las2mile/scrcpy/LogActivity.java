@@ -119,6 +119,8 @@ public class LogActivity extends Activity {
     private int accentColor;
     private int textPrimary;
     private int textSecondary;
+    private int onPage;
+    private int onPageSecondary;
     private int cardColor;
 
     @Override
@@ -130,6 +132,8 @@ public class LogActivity extends Activity {
         accentColor = resolveColor(R.attr.colorAccentScrcpy);
         textPrimary = resolveColor(R.attr.colorTextPrimary);
         textSecondary = resolveColor(R.attr.colorTextSecondary);
+        onPage = resolveColor(R.attr.colorOnPage);
+        onPageSecondary = resolveColor(R.attr.colorOnPageSecondary);
         cardColor = resolveColor(R.attr.colorCardBackground);
         section = getIntent().getIntExtra(EXTRA_SECTION, SECTION_CONNECTION);
         if (savedInstanceState != null) {
@@ -172,7 +176,7 @@ public class LogActivity extends Activity {
 
         TextView title = new TextView(this);
         title.setText(R.string.logs_title);
-        title.setTextColor(textPrimary);
+        title.setTextColor(onPage);
         title.setTextSize(20);
         title.setTypeface(Typeface.DEFAULT_BOLD);
         root.addView(title);
@@ -200,7 +204,7 @@ public class LogActivity extends Activity {
         root.addView(tabRow);
 
         hintText = new TextView(this);
-        hintText.setTextColor(textSecondary);
+        hintText.setTextColor(onPageSecondary);
         hintText.setTextSize(12);
         hintText.setPadding(dp(2), 0, dp(2), dp(6));
         root.addView(hintText);
@@ -248,7 +252,7 @@ public class LogActivity extends Activity {
         Button button = new Button(this, null, android.R.attr.borderlessButtonStyle);
         button.setText(label);
         button.setAllCaps(false);
-        button.setTextColor(accentColor);
+        button.setTextColor(onPage); // on the green page
         button.setTextSize(13);
         button.setOnClickListener(listener);
         row.addView(button, new LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f));
