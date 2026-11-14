@@ -720,8 +720,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         boolean all = true;
         all &= addCheck(lines, getString(R.string.root_check_adb_wifi), adbListening);
         all &= addCheck(lines, getString(R.string.root_check_dev_options),
-                readGlobal(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1));
-        all &= addCheck(lines, getString(R.string.root_check_adb), readGlobal(Settings.Global.ADB_ENABLED, 1));
+                debugSetting(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, adbListening));
+        all &= addCheck(lines, getString(R.string.root_check_adb),
+                debugSetting(Settings.Global.ADB_ENABLED, adbListening));
         if (Build.VERSION.SDK_INT >= 30) {
             all &= addCheck(lines, getString(R.string.root_check_remember), readGlobal("adb_allowed_connection_time", 0));
         }
@@ -761,6 +762,22 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         lines.append(ok ? "✅ " : "❌ ").append(label).append('\n');
         return ok;
+    }
+
+    /**
+     * Developer options / USB debugging. Android 17 hides both from apps (they always read 0,
+     * see Settings.Global.ADB_ENABLED), and some phones did so earlier. ADB answering on port
+     * 5555 proves debugging is on, so that wins; otherwise a 0 on Android 17+ means "unknown".
+     */
+    private Boolean debugSetting(String name, boolean adbListening) {
+        if (adbListening) {
+            return Boolean.TRUE;
+        }
+        Boolean value = readGlobal(name, 1);
+        if (Build.VERSION.SDK_INT >= 37 && !Boolean.TRUE.equals(value)) {
+            return null; // hidden by Android: cannot tell, so do not show a false ❌
+        }
+        return value;
     }
 
     /** Whether a Settings.Global integer equals {@code expected}; null when it cannot be read. */
