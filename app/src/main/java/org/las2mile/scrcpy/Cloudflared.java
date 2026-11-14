@@ -11,7 +11,12 @@ import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
 import java.net.InetAddress;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
@@ -53,6 +58,161 @@ final class Cloudflared {
         return binary(context).isFile();
     }
 
+    static File probe(Context context) {
+        return new File(context.getApplicationInfo().nativeLibraryDir, "libgoprobe.so");
+    }
+
+    /** Environment every cloudflared/probe run gets. */
+    private Map<String, String> baseEnvironment() {
+        File home = new File(context.getFilesDir(), "cloudflared");
+        //noinspection ResultOfMethodCallIgnored
+        home.mkdirs();
+        Map<String, String> env = new HashMap<>();
+        env.put("HOME", home.getAbsolutePath());
+        env.put("TMPDIR", context.getCacheDir().getAbsolutePath());
+        env.put("SSL_CERT_DIR", "/apex/com.android.conscrypt/cacerts:/system/etc/security/cacerts");
+        env.put("SCRCPY_DNS", dnsServers(context));
+        return env;
+    }
+
+    static final class RunResult {
+        final int code;
+        final String output;
+        final boolean timedOut;
+
+        RunResult(int code, String output, boolean timedOut) {
+            this.code = code;
+            this.output = output;
+            this.timedOut = timedOut;
+        }
+
+        boolean ok() {
+            return code == 0 && !timedOut;
+        }
+    }
+
+    /** Runs a short command, logging its output under "selftest". Never throws. */
+    private RunResult run(String label, List<String> command, Map<String, String> env, long timeoutMs) {
+        DiagnosticLog.i("selftest", "$ " + label);
+        final StringBuilder output = new StringBuilder();
+        Process process;
+        try {
+            ProcessBuilder builder = new ProcessBuilder(command);
+            builder.directory(context.getFilesDir());
+            builder.environment().putAll(env);
+            builder.redirectErrorStream(true);
+            process = builder.start();
+        } catch (IOException | RuntimeException e) {
+            DiagnosticLog.i("selftest", "  could not start: " + e);
+            return new RunResult(-1, String.valueOf(e), false);
+        }
+        final Process started = process;
+        Thread reader = new Thread(() -> {
+            try (BufferedReader in = new BufferedReader(new InputStreamReader(started.getInputStream(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = in.readLine()) != null) {
+                    DiagnosticLog.i("selftest", "  " + line);
+                    synchronized (output) {
+                        if (output.length() < 8000) {
+                            output.append(line).append('\n');
+                        }
+                    }
+                }
+            } catch (IOException ignored) {
+                // ended
+            }
+        }, "selftest-reader");
+        reader.setDaemon(true);
+        reader.start();
+        long deadline = System.currentTimeMillis() + timeoutMs;
+        Integer code = null;
+        while (code == null && System.currentTimeMillis() < deadline) {
+            try {
+                code = started.exitValue();
+            } catch (IllegalThreadStateException e) {
+                try {
+                    Thread.sleep(50);
+                } catch (InterruptedException interrupted) {
+                    break;
+                }
+            }
+        }
+        boolean timedOut = code == null;
+        if (timedOut) {
+            started.destroy();
+            code = -1;
+        }
+        try {
+            reader.join(1000);
+        } catch (InterruptedException ignored) {
+            // ignore
+        }
+        DiagnosticLog.i("selftest", "  → " + (timedOut ? "timed out after " + timeoutMs + " ms" : "exit code " + code + describeExit(code)));
+        synchronized (output) {
+            return new RunResult(code, output.toString(), timedOut);
+        }
+    }
+
+    /**
+     * Diagnoses why cloudflared does or does not start on this phone and returns the extra
+     * environment variables that made {@code cloudflared --version} work, or null if nothing did.
+     * Everything goes to the Connection log under "selftest".
+     */
+    Map<String, String> selfTest() {
+        File binary = binary(context);
+        File probe = probe(context);
+        String libDir = context.getApplicationInfo().nativeLibraryDir;
+        DiagnosticLog.i("selftest", "----- cloudflared self-test -----");
+        DiagnosticLog.i("selftest", "Android " + Build.VERSION.RELEASE + " (SDK " + Build.VERSION.SDK_INT + "), "
+                + Build.MANUFACTURER + " " + Build.MODEL + ", hardware " + Build.HARDWARE
+                + ", kernel " + System.getProperty("os.version"));
+        DiagnosticLog.i("selftest", "ABIs " + Arrays.toString(Build.SUPPORTED_ABIS) + ", app library folder " + libDir);
+        try {
+            DiagnosticLog.i("selftest", "Page size " + android.system.Os.sysconf(android.system.OsConstants._SC_PAGESIZE));
+        } catch (RuntimeException ignored) {
+            // ignore
+        }
+        DiagnosticLog.i("selftest", "cloudflared " + binary.length() + " bytes (executable " + binary.canExecute()
+                + "), goprobe " + probe.length() + " bytes");
+        Map<String, String> env = baseEnvironment();
+
+        run("shell", Arrays.asList("/system/bin/sh", "-c",
+                "echo shell ok; id; uname -a; getprop ro.product.cpu.abilist; ulimit -a 2>&1 | head -n 20;"
+                        + " grep -m 5 -iE 'features|CPU part|CPU architecture|Hardware' /proc/cpuinfo;"
+                        + " ls -l " + libDir), env, 10_000);
+
+        if (probe.isFile()) {
+            RunResult offline = run("goprobe --offline", Arrays.asList(probe.getAbsolutePath(), "--offline"), env, 15_000);
+            if (offline.ok()) {
+                run("goprobe (DNS + HTTPS)", Arrays.asList(probe.getAbsolutePath()), env, 30_000);
+            }
+        }
+
+        List<Map<String, String>> variants = new ArrayList<>();
+        variants.add(new HashMap<String, String>());
+        Map<String, String> noPreempt = new HashMap<>();
+        noPreempt.put("GODEBUG", "asyncpreemptoff=1");
+        variants.add(noPreempt);
+        Map<String, String> single = new HashMap<>(noPreempt);
+        single.put("GOMAXPROCS", "1");
+        variants.add(single);
+        for (Map<String, String> variant : variants) {
+            Map<String, String> runEnv = new HashMap<>(env);
+            runEnv.putAll(variant);
+            RunResult result = run("cloudflared --version " + variant, Arrays.asList(binary.getAbsolutePath(), "--version"),
+                    runEnv, 20_000);
+            if (result.ok()) {
+                DiagnosticLog.i("selftest", "cloudflared starts with " + (variant.isEmpty() ? "the default settings" : variant));
+                return variant;
+            }
+        }
+        // Let the shell report how it died (e.g. "Segmentation fault").
+        run("sh -c cloudflared --version", Arrays.asList("/system/bin/sh", "-c",
+                "\"$0\" --version; echo \"shell: exit $?\"", binary.getAbsolutePath()), env, 20_000);
+        DiagnosticLog.i("selftest", "cloudflared does not start on this phone");
+        return null;
+    }
+
     /** Extracts the trycloudflare host name from a cloudflared log line, or returns null. */
     static String findAddress(String line) {
         Matcher matcher = URL.matcher(line);
@@ -74,15 +234,19 @@ final class Cloudflared {
         if (!home.isDirectory() && !home.mkdirs()) {
             throw new IOException("Cannot create " + home);
         }
+        Map<String, String> extra = selfTest();
+        if (extra == null) {
+            throw new IOException("cloudflared crashes when it starts on this phone. Please send the Connection log "
+                    + "(Logs → Connection log, lines tagged selftest).");
+        }
         ProcessBuilder builder = new ProcessBuilder(binary.getAbsolutePath(), "tunnel", "--no-autoupdate",
                 "--url", "http://127.0.0.1:" + localPort);
         builder.directory(home);
-        builder.environment().put("HOME", home.getAbsolutePath());
-        builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
-        builder.environment().put("SSL_CERT_DIR", "/apex/com.android.conscrypt/cacerts:/system/etc/security/cacerts");
-        String dns = dnsServers(context);
-        builder.environment().put("SCRCPY_DNS", dns);
-        DiagnosticLog.i("cloudflared", "DNS servers: " + (dns.isEmpty() ? "(none found, using 1.1.1.1 / 8.8.8.8)" : dns));
+        Map<String, String> env = baseEnvironment();
+        env.putAll(extra);
+        builder.environment().putAll(env);
+        String dns = env.get("SCRCPY_DNS");
+        DiagnosticLog.i("cloudflared", "DNS servers: " + (dns == null || dns.isEmpty() ? "(none found, using 1.1.1.1 / 8.8.8.8)" : dns));
         builder.redirectErrorStream(true);
         DiagnosticLog.i("cloudflared", "Starting quick tunnel to http://127.0.0.1:" + localPort);
         stopping = false;

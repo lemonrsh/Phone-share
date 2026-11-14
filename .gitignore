@@ -10,4 +10,5 @@ captures/
 
 # Built by CI (see .github/workflows/android-apk.yml): never commit the cloudflared binaries.
 app/src/main/jniLibs/**/libcloudflared.so
+app/src/main/jniLibs/**/libgoprobe.so
 .cloudflared-src/
