@@ -13,8 +13,10 @@ public class AdbLauncherTest {
         options.audioEnabled = true;
         options.maxSize = 1920;
         String command = AdbLauncher.buildServerCommand(options, "192.168.1.5");
-        assertTrue(command.startsWith("CLASSPATH=/data/local/tmp/scrcpy-server.jar app_process / "
+        // "exec CLASSPATH=... app_process" fails in Android's shell: export first, then exec.
+        assertTrue(command.startsWith("export CLASSPATH=/data/local/tmp/scrcpy-server.jar; exec app_process / "
                 + "com.genymobile.scrcpy.Server " + ScrcpySessionOptions.SERVER_VERSION + " "));
+        assertTrue(!command.contains("exec CLASSPATH="));
         assertTrue(command.contains(" tcp_client=192.168.1.5 "));
         assertTrue(command.contains(" tcp_port=7007 "));
         assertTrue(command.contains(" audio=true "));

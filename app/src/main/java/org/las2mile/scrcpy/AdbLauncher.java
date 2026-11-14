@@ -336,9 +336,15 @@ public final class AdbLauncher {
         }
     }
 
+    /**
+     * The shell line that starts the server. {@code exec} replaces the shell, so that
+     * the ADB stream closes when the server exits and hanging up stops the server.
+     * Android's mksh does not accept {@code exec VAR=value cmd} (it looks for a program
+     * called "VAR=value"), so CLASSPATH is exported first.
+     */
     static String buildServerCommand(ScrcpySessionOptions options, String localAddress) {
         StringBuilder command = new StringBuilder();
-        command.append("CLASSPATH=").append(SERVER_PATH);
+        command.append("export CLASSPATH=").append(SERVER_PATH).append("; exec");
         command.append(" app_process / com.genymobile.scrcpy.Server ").append(ScrcpySessionOptions.SERVER_VERSION);
         command.append(" log_level=info");
         command.append(" tcp_port=").append(ScrcpySessionOptions.SERVER_PORT);
@@ -620,10 +626,8 @@ public final class AdbLauncher {
         void startServer(String command) throws IOException, InterruptedException {
             output.clearPending();
             serverStarted = true;
-            DiagnosticLog.i("shell", "$ exec " + command);
-            // exec replaces the shell: when the server exits the ADB stream closes, and hanging
-            // up the shell stops the server.
-            write("exec " + command);
+            DiagnosticLog.i("shell", "$ " + command);
+            write(command);
         }
     }
 }
