@@ -23,7 +23,7 @@
     <string name="press_back_again">Press back again to stop mirroring</string>
     <string name="notification_channel">Floating mirror</string>
     <string name="notification_title">Mirroring in a floating window</string>
-    <string name="notification_text">Tap Stop to close the floating window.</string>
+    <string name="notification_text">Drag the window to the bottom or fling it away to close it.</string>
     <string name="notification_stop">Stop</string>
     <string name="switch_dark_mode">Dark mode</string>
     <string name="switch_floating_mode">Use a floating window</string>
@@ -36,7 +36,7 @@
     <string name="switch_stay_awake">Keep the remote device awake while connected</string>
     <string name="switch_show_touches">Show touch indicators on the remote device</string>
     <string name="scrcpy_latest_note">Bundled upstream server: v5.0.1. Audio needs Android 10 or newer on the target device. Recording, camera capture, USB/OTG and desktop window flags are not part of this Android viewer.</string>
-    <string name="floating_mode_note">Choose a movable overlay window or full-screen mirroring. Android may ask for permission to display over other apps.</string>
+    <string name="floating_mode_note">Choose a YouTube-style floating player or full-screen mirroring. Android may ask for permission to display over other apps.</string>
     <string name="audio_note">Audio is off by default. Enable it to play the target device audio on this device.</string>
     <string name="control_note">No control disables remote touch, key, wake-on-connect and turn-screen-off-on-connect commands. Power off on close remains a server cleanup option.</string>
 
