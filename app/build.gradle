@@ -8,8 +8,8 @@ android {
         applicationId "org.las2mile.scrcpy"
         minSdk 21
         targetSdk 36
-        versionCode 20
-        versionName "5.0.1-cloudflared-test4"
+        versionCode 21
+        versionName "5.0.1-cloudflared-test5"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -62,20 +62,27 @@ android {
     }
 }
 
-// Package the server APK as scrcpy-server.jar. app_process loads the classes.dex
-// directly from this APK, which is the format used by upstream scrcpy releases.
-tasks.register('copyScrcpyServerDebug', Copy) {
-    dependsOn ':server:assembleDebug'
-    from "$rootDir/server/build/outputs/apk/debug/server-debug.apk"
-    into "$buildDir/generated/scrcpyServerAssets/debug"
-    rename { 'scrcpy-server.jar' }
-}
-
-tasks.register('copyScrcpyServerRelease', Copy) {
-    dependsOn ':server:assembleRelease'
-    from "$rootDir/server/build/outputs/apk/release/server-release-unsigned.apk"
-    into "$buildDir/generated/scrcpyServerAssets/release"
-    rename { 'scrcpy-server.jar' }
+// Package the server as scrcpy-server.jar: only the classes*.dex of the server APK, deflated.
+// app_process loads the dex straight from the zip; the APK's resources, manifest and signature
+// files are not needed, and a smaller file uploads much faster (Cloudflare tunnel, slow Wi-Fi).
+['Debug', 'Release'].each { variant ->
+    def lower = variant.toLowerCase()
+    def apk = lower == 'debug' ? 'server-debug.apk' : 'server-release-unsigned.apk'
+    tasks.register("copyScrcpyServer${variant}", Zip) {
+        dependsOn ":server:assemble${variant}"
+        from(zipTree("$rootDir/server/build/outputs/apk/${lower}/${apk}")) {
+            include 'classes*.dex'
+        }
+        archiveFileName = 'scrcpy-server.jar'
+        destinationDirectory = file("$buildDir/generated/scrcpyServerAssets/${lower}")
+        entryCompression = ZipEntryCompression.DEFLATED
+        preserveFileTimestamps = false
+        reproducibleFileOrder = true
+        doLast {
+            def jar = new File(destinationDirectory.get().asFile, 'scrcpy-server.jar')
+            println "::notice title=scrcpy server size::${variant} scrcpy-server.jar is ${jar.length()} bytes"
+        }
+    }
 }
 
 tasks.configureEach { task ->
