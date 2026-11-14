@@ -50,7 +50,7 @@
     <string name="label_video_bitrate">Video bitrate</string>
     <string name="label_video_fps">Maximum frame rate</string>
     <string name="label_x">x</string>
-    <string name="action_start">Start mirroring</string>
+    <string name="action_start">Connect</string>
     <string name="appswitch_button">▢</string>
     <string name="home_button">○</string>
     <string name="back_button">◁</string>
@@ -66,7 +66,7 @@
     <string name="notification_stop">Stop</string>
     <string name="button_copy_adb_key">Connection keeps failing? Authorize with root…</string>
     <string name="adb_key_title">Authorize this phone on a rooted target</string>
-    <string name="adb_key_message">The target must accept this phone\'s ADB key. Normally it asks with an \"Allow USB debugging?\" prompt. If that prompt never appears or the target hangs up, run this command on the rooted target (for example in Termux), then tap Start again:\n\n%1$s</string>
+    <string name="adb_key_message">The target must accept this phone\'s ADB key. Normally it asks with an \"Allow USB debugging?\" prompt. If that prompt never appears or the target hangs up, run this command on the rooted target (for example in Termux), then tap Connect again:\n\n%1$s</string>
     <string name="adb_key_copy">Copy command</string>
     <string name="section_logs">Logs</string>
     <string name="logs_note">Something not working? The connection log shows every step and what the other device answered. The app log is this app\'s own system log. No root needed.</string>
@@ -79,7 +79,7 @@
     <string name="logs_hint_connection">Every connection step, the shell commands sent and everything the other device and the scrcpy server printed.</string>
     <string name="logs_hint_app">This app\'s own system log (logcat), including errors and crashes.</string>
     <string name="logs_hint_target">Fetched over ADB from %1$s: device info, a scrcpy server self-test and the other device\'s relevant logcat. No root needed.</string>
-    <string name="logs_connection_empty">No connection attempts yet. Tap Start mirroring, then come back here.</string>
+    <string name="logs_connection_empty">No connection attempts yet. Tap Connect, then come back here.</string>
     <string name="logs_target_empty">Tap \"Fetch from target\" to read diagnostics from the other device over ADB.</string>
     <string name="logs_loading">Loading…</string>
     <string name="logs_target_loading">Connecting to %1$s and collecting diagnostics (up to a minute)…</string>

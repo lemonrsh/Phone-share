@@ -398,7 +398,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             } catch (RuntimeException e) {
                 startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION));
             }
-            Toast.makeText(this, "Allow display over other apps, then tap Start again", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Allow display over other apps, then tap Connect again", Toast.LENGTH_LONG).show();
             return;
         }
         Intent intent = new Intent(this, FloatService.class);
