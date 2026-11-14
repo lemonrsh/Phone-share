@@ -8,13 +8,14 @@ import android.view.MotionEvent;
 import android.view.Surface;
 
 import org.las2mile.scrcpy.decoder.AudioDecoder;
+import org.las2mile.scrcpy.decoder.Codecs;
 import org.las2mile.scrcpy.decoder.VideoDecoder;
-import org.las2mile.scrcpy.model.VideoPacket;
 
 import java.io.BufferedInputStream;
 import java.io.DataInputStream;
 import java.io.EOFException;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.OutputStream;
 import java.net.InetSocketAddress;
 import java.net.Socket;
@@ -35,8 +36,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
 public final class ScrcpyClient {
     private static final String TAG = "ScrcpyClient";
 
-    private static final int VIDEO_CODEC_H264 = 0x68323634;
-    private static final int AUDIO_CODEC_AAC = 0x00616163;
     private static final long PACKET_FLAG_CONFIG = 1L << 62;
     private static final long PACKET_FLAG_KEY_FRAME = 1L << 61;
     private static final long PACKET_FLAG_MASK = (1L << 63) | PACKET_FLAG_CONFIG | PACKET_FLAG_KEY_FRAME;
@@ -56,6 +55,9 @@ public final class ScrcpyClient {
 
         /** The session ended unexpectedly; the client is already stopped. */
         void onDisconnected(String message);
+
+        /** The target's clipboard changed (only with clipboard sync enabled). */
+        void onDeviceClipboard(String text);
     }
 
     private final String host;
@@ -79,13 +81,17 @@ public final class ScrcpyClient {
     private volatile Thread videoThread;
     private volatile Thread audioThread;
     private volatile Thread controlThread;
+    private volatile Thread deviceMessageThread;
+    private volatile String deviceName = "";
+    private final int expectedVideoCodec;
 
     public ScrcpyClient(String host, ScrcpySessionOptions options, AdbLauncher.Session adbSession, Listener listener) {
         this.host = host;
         this.options = options.copy();
         this.adbSession = adbSession;
         this.listener = listener;
-        this.videoDecoder = new VideoDecoder(this::requestKeyFrame);
+        this.expectedVideoCodec = Codecs.videoId(this.options.videoCodec);
+        this.videoDecoder = new VideoDecoder(Codecs.videoMime(this.options.videoCodec), this::requestKeyFrame);
     }
 
     public void start() {
@@ -93,7 +99,8 @@ public final class ScrcpyClient {
             return;
         }
         DiagnosticLog.i("client", "Connecting to the server at " + host + ":" + ScrcpySessionOptions.SERVER_PORT
-                + " (audio=" + options.audioEnabled + ", control=" + !options.noControl + ")");
+                + " (video=" + options.videoCodec + ", audio=" + (options.audioEnabled ? options.audioCodec : "off")
+                + ", control=" + !options.noControl + ")");
         videoThread = new Thread(this::runVideo, "scrcpy-video");
         videoThread.setPriority(Thread.MAX_PRIORITY);
         videoThread.start();
@@ -137,6 +144,11 @@ public final class ScrcpyClient {
         return connected && running.get();
     }
 
+    /** The target's device name from the handshake (empty before it is known). */
+    public String getDeviceName() {
+        return deviceName;
+    }
+
     public int getVideoWidth() {
         return videoWidth;
     }
@@ -158,7 +170,8 @@ public final class ScrcpyClient {
     public boolean sendTouch(MotionEvent event, int viewWidth, int viewHeight) {
         int width = videoWidth;
         int height = videoHeight;
-        if (options.noControl || !isConnected() || width <= 0 || height <= 0 || viewWidth <= 0 || viewHeight <= 0) {
+        if (options.noControl || options.cameraSource || !isConnected() || width <= 0 || height <= 0
+                || viewWidth <= 0 || viewHeight <= 0) {
             return true;
         }
         int actionMasked = event.getActionMasked();
@@ -214,6 +227,14 @@ public final class ScrcpyClient {
         queueControl(ControlMessages.setDisplayPower(on));
     }
 
+    /** Sends this phone's clipboard text to the target (clipboard sync). */
+    public void setClipboard(String text) {
+        if (options.noControl || text == null || !isConnected()) {
+            return;
+        }
+        queueControl(ControlMessages.setClipboard(0, text, false));
+    }
+
     private void requestKeyFrame() {
         if (options.noControl || !connected) {
             return;
@@ -249,6 +270,11 @@ public final class ScrcpyClient {
             if (controlSocket != null) {
                 controlThread = new Thread(this::runControl, "scrcpy-control");
                 controlThread.start();
+                if (options.clipboardAutosync) {
+                    deviceMessageThread = new Thread(this::runDeviceMessages, "scrcpy-device-messages");
+                    deviceMessageThread.setDaemon(true);
+                    deviceMessageThread.start();
+                }
             }
             readVideoStream(input);
             failure = "The remote device closed the stream.";
@@ -333,13 +359,18 @@ public final class ScrcpyClient {
         byte[] deviceName = new byte[64];
         input.readFully(deviceName);
         int codec = input.readInt();
-        DiagnosticLog.i("client", "Handshake OK: device '" + new String(deviceName, java.nio.charset.StandardCharsets.UTF_8)
-                .trim() + "', codec 0x" + Integer.toHexString(codec));
+        this.deviceName = decodeDeviceName(deviceName);
+        DiagnosticLog.i("client", "Handshake OK: device '" + this.deviceName + "', codec "
+                + Codecs.describeId(codec));
         if (codec == 0 || codec == 1) {
-            throw new IOException("The remote device could not start screen capture.");
+            throw new IOException("The remote device could not start "
+                    + (options.cameraSource ? "the camera." : "screen capture.")
+                    + (options.videoCodec.equals("h264") ? "" : " Its encoder may not support "
+                    + Codecs.describeId(expectedVideoCodec) + "; try H.264."));
         }
-        if (codec != VIDEO_CODEC_H264) {
-            throw new IOException("Unsupported video codec 0x" + Integer.toHexString(codec));
+        if (codec != expectedVideoCodec) {
+            throw new IOException("Unexpected video codec " + Codecs.describeId(codec) + " (asked for "
+                    + Codecs.describeId(expectedVideoCodec) + ")");
         }
         return input;
     }
@@ -378,8 +409,7 @@ public final class ScrcpyClient {
             if ((ptsAndFlags & PACKET_FLAG_CONFIG) != 0) {
                 byte[] config = new byte[size];
                 System.arraycopy(packet, 0, config, 0, size);
-                VideoPacket.StreamSettings settings = VideoPacket.getStreamSettings(config);
-                videoDecoder.configure(videoWidth, videoHeight, settings.sps, settings.pps);
+                videoDecoder.configure(videoWidth, videoHeight, config);
             } else if (size > 0) {
                 boolean keyFrame = (ptsAndFlags & PACKET_FLAG_KEY_FRAME) != 0;
                 videoDecoder.decode(packet, size, ptsAndFlags & ~PACKET_FLAG_MASK, keyFrame);
@@ -398,6 +428,21 @@ public final class ScrcpyClient {
             connected = true;
             if (options.turnScreenOffOnConnect) {
                 setDisplayPower(false);
+            }
+            String app = options.startApp == null ? "" : options.startApp.trim();
+            if (!app.isEmpty() && !options.noControl) {
+                DiagnosticLog.i("client", "Starting app on the target: " + app);
+                queueControl(ControlMessages.startApp(app));
+            }
+            if (options.timeLimitSeconds > 0) {
+                final int limit = options.timeLimitSeconds;
+                mainHandler.postDelayed(() -> {
+                    if (running.get()) {
+                        DiagnosticLog.i("client", "Time limit reached (" + limit + " s)");
+                        stop();
+                        listener.onDisconnected("Time limit reached (" + limit + " s).");
+                    }
+                }, limit * 1000L);
             }
             postToListener(() -> listener.onConnected(width, height));
         } else if (changed) {
@@ -422,10 +467,12 @@ public final class ScrcpyClient {
                 Log.w(TAG, "The remote device failed to start audio capture");
                 return;
             }
-            if (codec != AUDIO_CODEC_AAC) {
-                throw new IOException("Unsupported audio codec 0x" + Integer.toHexString(codec));
+            if (codec != Codecs.AUDIO_AAC && codec != Codecs.AUDIO_OPUS && codec != Codecs.AUDIO_FLAC
+                    && codec != Codecs.AUDIO_RAW) {
+                throw new IOException("Unsupported audio codec " + Codecs.describeId(codec));
             }
-            decoder = new AudioDecoder();
+            DiagnosticLog.i("client", "Audio stream: " + Codecs.describeId(codec));
+            decoder = new AudioDecoder(codec);
             audioDecoder = decoder;
             byte[] packet = new byte[16 * 1024];
             while (running.get()) {
@@ -502,6 +549,57 @@ public final class ScrcpyClient {
                 Log.w(TAG, "Control channel closed", e);
             }
         }
+    }
+
+    /** Reads device messages (clipboard changes) sent by the server on the control socket. */
+    private void runDeviceMessages() {
+        try {
+            Socket socket = controlSocket;
+            if (socket == null) {
+                return;
+            }
+            InputStream raw = socket.getInputStream();
+            DataInputStream input = new DataInputStream(new BufferedInputStream(raw, 16 * 1024));
+            while (running.get()) {
+                int type = input.readUnsignedByte();
+                switch (type) {
+                    case ControlMessages.DEVICE_MSG_CLIPBOARD: {
+                        int length = input.readInt();
+                        if (length < 0 || length > ControlMessages.CLIPBOARD_TEXT_MAX_LENGTH) {
+                            throw new IOException("Invalid clipboard length: " + length);
+                        }
+                        byte[] data = new byte[length];
+                        input.readFully(data);
+                        final String text = new String(data, java.nio.charset.StandardCharsets.UTF_8);
+                        postToListener(() -> listener.onDeviceClipboard(text));
+                        break;
+                    }
+                    case ControlMessages.DEVICE_MSG_ACK_CLIPBOARD:
+                        input.readLong();
+                        break;
+                    case ControlMessages.DEVICE_MSG_UHID_OUTPUT: {
+                        input.readUnsignedShort(); // id
+                        int size = input.readUnsignedShort();
+                        input.readFully(new byte[size]);
+                        break;
+                    }
+                    default:
+                        throw new IOException("Unknown device message type " + type);
+                }
+            }
+        } catch (IOException | RuntimeException e) {
+            if (running.get()) {
+                Log.w(TAG, "Device message channel closed", e);
+            }
+        }
+    }
+
+    static String decodeDeviceName(byte[] raw) {
+        int end = 0;
+        while (end < raw.length && raw[end] != 0) {
+            ++end;
+        }
+        return new String(raw, 0, end, java.nio.charset.StandardCharsets.UTF_8).trim();
     }
 
     private void notifyDisconnected(String message) {

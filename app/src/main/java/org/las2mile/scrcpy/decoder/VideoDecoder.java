@@ -6,13 +6,15 @@ import android.os.Build;
 import android.util.Log;
 import android.view.Surface;
 
+import org.las2mile.scrcpy.model.VideoPacket;
+
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.locks.ReentrantReadWriteLock;
 
 /**
- * Low-latency H.264 decoder rendering into a Surface.
+ * Low-latency video decoder (H.264, H.265 or AV1) rendering into a Surface.
  *
  * <p>Input is queued from the network thread, output is drained and rendered
  * by a dedicated thread. Both only take the shared (read) side of a lock, so
@@ -23,7 +25,6 @@ import java.util.concurrent.locks.ReentrantReadWriteLock;
  */
 public final class VideoDecoder {
     private static final String TAG = "VideoDecoder";
-    private static final String MIME_TYPE = MediaFormat.MIMETYPE_VIDEO_AVC;
     private static final long INPUT_TIMEOUT_US = 20_000;
     private static final long OUTPUT_TIMEOUT_US = 10_000;
     private static final int INPUT_ATTEMPTS = 25; // up to ~500 ms of decoder back-pressure
@@ -37,13 +38,14 @@ public final class VideoDecoder {
     /** Number of threads waiting for the exclusive lock; makes the input loop give way quickly. */
     private final AtomicInteger exclusiveWaiters = new AtomicInteger();
     private final KeyFrameRequester keyFrameRequester;
+    private final String mimeType;
     private final Thread outputThread;
 
     // Guarded by lock (write side for mutation).
     private MediaCodec codec;
     private Surface surface;
-    private ByteBuffer sps;
-    private ByteBuffer pps;
+    /** Codec-specific data (csd-0, csd-1, ...) from the last configuration packet. */
+    private ByteBuffer[] csd;
     private int width;
     private int height;
     private boolean lowLatencySupported = true;
@@ -52,7 +54,8 @@ public final class VideoDecoder {
     private volatile boolean waitingForKeyFrame = true;
     private volatile boolean codecFailed;
 
-    public VideoDecoder(KeyFrameRequester keyFrameRequester) {
+    public VideoDecoder(String mimeType, KeyFrameRequester keyFrameRequester) {
+        this.mimeType = mimeType;
         this.keyFrameRequester = keyFrameRequester;
         outputThread = new Thread(this::drainOutput, "scrcpy-video-output");
         outputThread.setPriority(Thread.MAX_PRIORITY);
@@ -75,7 +78,7 @@ public final class VideoDecoder {
             }
             surface = newSurface;
             releaseCodecLocked();
-            if (surface != null && sps != null) {
+            if (surface != null && csd != null) {
                 needKeyFrame = configureLocked();
             }
         } finally {
@@ -86,8 +89,9 @@ public final class VideoDecoder {
         }
     }
 
-    /** Applies a new stream configuration (SPS/PPS) received from the server. */
-    public void configure(int width, int height, ByteBuffer sps, ByteBuffer pps) {
+    /** Applies a new stream configuration packet received from the server. */
+    public void configure(int width, int height, byte[] config) {
+        ByteBuffer[] buffers = codecSpecificData(mimeType, config);
         lockExclusive();
         try {
             if (released) {
@@ -95,8 +99,7 @@ public final class VideoDecoder {
             }
             this.width = width;
             this.height = height;
-            this.sps = sps;
-            this.pps = pps;
+            this.csd = buffers;
             releaseCodecLocked();
             if (surface != null) {
                 // The server sends a key frame right after the configuration packet.
@@ -186,7 +189,7 @@ public final class VideoDecoder {
             }
             codecFailed = false;
             releaseCodecLocked();
-            if (surface != null && surface.isValid() && sps != null) {
+            if (surface != null && surface.isValid() && csd != null) {
                 needKeyFrame = configureLocked();
             }
         } finally {
@@ -215,12 +218,12 @@ public final class VideoDecoder {
     /** Must hold the write lock. Returns true when a codec was created. */
     private boolean configureLocked() {
         waitingForKeyFrame = true;
-        if (surface == null || !surface.isValid() || sps == null || pps == null || width <= 0 || height <= 0) {
+        if (surface == null || !surface.isValid() || csd == null || width <= 0 || height <= 0) {
             return false;
         }
         MediaCodec newCodec = null;
         try {
-            newCodec = MediaCodec.createDecoderByType(MIME_TYPE);
+            newCodec = MediaCodec.createDecoderByType(mimeType);
             try {
                 newCodec.configure(createFormat(lowLatencySupported), surface, null, 0);
             } catch (RuntimeException e) {
@@ -231,14 +234,14 @@ public final class VideoDecoder {
                 Log.w(TAG, "Decoder rejected low-latency configuration; retrying", e);
                 lowLatencySupported = false;
                 newCodec.release();
-                newCodec = MediaCodec.createDecoderByType(MIME_TYPE);
+                newCodec = MediaCodec.createDecoderByType(mimeType);
                 newCodec.configure(createFormat(false), surface, null, 0);
             }
             newCodec.start();
             codec = newCodec;
             return true;
         } catch (IOException | RuntimeException e) {
-            Log.e(TAG, "Could not create the H.264 decoder", e);
+            Log.e(TAG, "Could not create the " + mimeType + " decoder", e);
             if (newCodec != null) {
                 try {
                     newCodec.release();
@@ -252,9 +255,10 @@ public final class VideoDecoder {
     }
 
     private MediaFormat createFormat(boolean lowLatency) {
-        MediaFormat format = MediaFormat.createVideoFormat(MIME_TYPE, width, height);
-        format.setByteBuffer("csd-0", sps.duplicate());
-        format.setByteBuffer("csd-1", pps.duplicate());
+        MediaFormat format = MediaFormat.createVideoFormat(mimeType, width, height);
+        for (int i = 0; i < csd.length; ++i) {
+            format.setByteBuffer("csd-" + i, csd[i].duplicate());
+        }
         format.setInteger(MediaFormat.KEY_MAX_INPUT_SIZE, Math.max(width * height, 1024 * 1024));
         if (lowLatency) {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
@@ -265,6 +269,22 @@ public final class VideoDecoder {
             }
         }
         return format;
+    }
+
+    /**
+     * H.264 needs SPS and PPS as two buffers; H.265 takes VPS+SPS+PPS in csd-0 and AV1 its
+     * configuration record in csd-0, which is exactly what the scrcpy server sends.
+     */
+    static ByteBuffer[] codecSpecificData(String mimeType, byte[] config) {
+        if (MediaFormat.MIMETYPE_VIDEO_AVC.equals(mimeType)) {
+            try {
+                VideoPacket.StreamSettings settings = VideoPacket.getStreamSettings(config);
+                return new ByteBuffer[] {settings.sps, settings.pps};
+            } catch (IllegalArgumentException e) {
+                Log.w(TAG, "Unusual H.264 configuration, passing it as a single buffer", e);
+            }
+        }
+        return new ByteBuffer[] {ByteBuffer.wrap(config.clone())};
     }
 
     /** Must hold the write lock. */

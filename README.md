@@ -7,8 +7,18 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
 - Full-screen mirroring or a YouTube-style floating player (see below).
 - Light and dark settings screens.
 - Selectable maximum video size, bitrate and frame rate.
-- One **Scrcpy v5.0.1 options** section for video size/bitrate/frame rate, audio, no-control, wake/screen-power, stay-awake and show-touches settings.
-- AAC audio playback can be enabled for compatible target devices (Android 10 or newer is recommended).
+- All scrcpy options in one **green options box**: the original video size/bitrate/frame rate, audio, no-control, wake/screen-power, stay-awake and show-touches settings, plus collapsible groups for every other scrcpy v5.0.1 server option that makes sense on a phone:
+  - **Video**: codec (H.264, H.265, AV1), encoder name, codec options, downsize on error, ignore encoder constraints, size alignment.
+  - **Audio**: codec (AAC, Opus, FLAC, raw), source (output, playback, microphones, voice call…), audio dup, bitrate, encoder, codec options.
+  - **Control & behaviour**: two-way clipboard sync, start an app on connect, screen-off timeout, keep active, time limit, cleanup.
+  - **Display & capture**: screen or camera source, display ID, capture orientation (rotate/flip/lock), angle, crop.
+  - **Camera**: ID, facing, size, aspect ratio, frame rate, zoom, high speed, torch.
+  - **Virtual display**: new display (size/dpi), destroy content, system decorations, IME policy.
+  - **Advanced**: server log level.
+  Values are validated before anything is sent to the target. Desktop-only flags (recording, window options, USB/OTG, HID keyboard/mouse) are not included.
+- The main screen shows the connection state (**Connected to …** / **Disconnected**), and a message appears when a session connects or ends, in full-screen and floating mode.
+- **ADB on this device (port 5555)**: shows whether this phone accepts ADB over Wi-Fi and its address, so another device can mirror it. With root, one tap turns it on (optionally across reboots) or off. Without root, Android only allows it from a computer (`adb tcpip 5555`); the app explains the steps.
+- Remote audio playback (AAC, Opus, FLAC or raw) for compatible target devices (Android 11 or newer).
 - Settings are remembered on the phone.
 - The server is only uploaded when the copy on the target differs, so reconnecting is fast.
 - Rotation and app switching keep the session alive (the decoder is rebuilt on the new surface and a fresh key frame is requested).

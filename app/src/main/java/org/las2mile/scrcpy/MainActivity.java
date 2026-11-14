@@ -39,7 +39,7 @@ import android.window.OnBackInvokedCallback;
 import android.window.OnBackInvokedDispatcher;
 
 public class MainActivity extends Activity implements ScrcpyClient.Listener, SensorEventListener,
-        SurfaceHolder.Callback {
+        SurfaceHolder.Callback, SessionState.Listener {
     private static final String TAG = "MainActivity";
     private static final String PREFERENCE_KEY = "default";
     private static final String PREFERENCE_SPINNER_RESOLUTION = "spinner_resolution";
@@ -47,6 +47,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static final String PREFERENCE_SPINNER_FPS = "spinner_fps";
     private static final String PREFERENCE_DARK_MODE = "dark_mode";
     private static final String PREFERENCE_FLOATING_WINDOW = "floating_window";
+    private static final String PREFERENCE_LOCAL_ADB_PERSIST = "local_adb_persist";
     private static final long BACK_PRESS_INTERVAL_MS = 1_500;
 
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
@@ -57,6 +58,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private ScrcpyClient client;
     private boolean mirroring;
     private boolean resumed;
+    private String currentHost;
+    private ClipboardSync clipboardSync;
+    private boolean localAdbBusy;
 
     // Mirroring views.
     private LinearLayout mirrorContainer;
@@ -80,7 +84,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setTheme(darkMode ? R.style.AppThemeDark : R.style.AppTheme);
         super.onCreate(savedInstanceState);
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
+        clipboardSync = new ClipboardSync(this, () -> client);
         showSettings();
+        SessionState.addListener(this);
     }
 
     // ---------------------------------------------------------------- settings screen
@@ -101,6 +107,178 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         findViewById(R.id.button_copy_adb_key).setOnClickListener(view -> showAdbKeyDialog());
         findViewById(R.id.button_connection_log).setOnClickListener(view -> openLog(LogActivity.SECTION_CONNECTION_LOG));
         findViewById(R.id.button_app_log).setOnClickListener(view -> openLog(LogActivity.SECTION_APP_LOG));
+        new OptionsPanel(this, getPreferences(), findViewById(R.id.options_container)).build();
+        setupLocalAdbCard();
+        updateSessionStatusView();
+    }
+
+    // ---------------------------------------------------------------- connection status
+
+    @Override
+    public void onSessionStateChanged(SessionState.Status status, String host, String deviceName, String message) {
+        updateSessionStatusView();
+    }
+
+    private void updateSessionStatusView() {
+        TextView view = findViewById(R.id.text_session_status);
+        if (view == null) {
+            return;
+        }
+        String who = SessionState.describe(SessionState.getHost(), SessionState.getDeviceName());
+        int color;
+        switch (SessionState.getStatus()) {
+            case CONNECTING:
+                view.setText(getString(R.string.status_connecting, who));
+                color = 0xFFF59E0B;
+                break;
+            case CONNECTED:
+                view.setText(getString(R.string.status_connected, who));
+                color = 0xFF16A34A;
+                break;
+            case DISCONNECTED: {
+                String reason = SessionState.getMessage();
+                view.setText(reason == null || reason.isEmpty() ? getString(R.string.status_disconnected)
+                        : getString(R.string.status_disconnected_reason, shorten(reason, 90)));
+                color = 0xFFDC2626;
+                break;
+            }
+            case IDLE:
+            default:
+                view.setText(R.string.status_disconnected);
+                color = 0xFF94A3B8;
+                break;
+        }
+        // Color only the dot.
+        CharSequence text = view.getText();
+        android.text.SpannableString spannable = new android.text.SpannableString(text);
+        if (text.length() > 0) {
+            spannable.setSpan(new android.text.style.ForegroundColorSpan(color), 0, 1,
+                    android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE);
+        }
+        view.setText(spannable);
+    }
+
+    private static String shorten(String text, int max) {
+        String single = text.replace('\n', ' ').trim();
+        return single.length() <= max ? single : single.substring(0, max - 1) + "…";
+    }
+
+    // ---------------------------------------------------------------- ADB on this device
+
+    private void setupLocalAdbCard() {
+        Switch persist = findViewById(R.id.switch_local_adb_persist);
+        persist.setChecked(getPreferences().getBoolean(PREFERENCE_LOCAL_ADB_PERSIST, false));
+        bindSwitch(persist, PREFERENCE_LOCAL_ADB_PERSIST);
+        findViewById(R.id.button_local_adb_on).setOnClickListener(view -> changeLocalAdb(true));
+        findViewById(R.id.button_local_adb_off).setOnClickListener(view -> changeLocalAdb(false));
+        findViewById(R.id.button_local_adb_check).setOnClickListener(view -> refreshLocalAdb());
+        refreshLocalAdb();
+    }
+
+    private void refreshLocalAdb() {
+        TextView status = findViewById(R.id.text_local_adb_status);
+        if (status == null || localAdbBusy) {
+            return;
+        }
+        status.setText(R.string.local_adb_checking);
+        new Thread(() -> {
+            final boolean listening = LocalAdb.isListening();
+            final java.util.List<String> addresses = LocalAdb.localAddresses();
+            runOnUiThread(() -> showLocalAdbStatus(listening, addresses));
+        }, "local-adb-check").start();
+    }
+
+    private void showLocalAdbStatus(boolean listening, java.util.List<String> addresses) {
+        TextView status = findViewById(R.id.text_local_adb_status);
+        if (status == null || isFinishing()) {
+            return;
+        }
+        if (!listening) {
+            status.setText(R.string.local_adb_off);
+        } else if (addresses.isEmpty()) {
+            status.setText(R.string.local_adb_on_no_ip);
+        } else {
+            StringBuilder list = new StringBuilder();
+            for (String address : addresses) {
+                if (list.length() > 0) {
+                    list.append('\n');
+                }
+                int space = address.indexOf(' ');
+                String ip = space < 0 ? address : address.substring(0, space);
+                list.append("    ").append(ip).append(':').append(LocalAdb.PORT)
+                        .append(space < 0 ? "" : address.substring(space));
+            }
+            status.setText(getString(R.string.local_adb_on, list));
+        }
+    }
+
+    private void changeLocalAdb(boolean enable) {
+        if (localAdbBusy) {
+            return;
+        }
+        TextView status = findViewById(R.id.text_local_adb_status);
+        localAdbBusy = true;
+        setLocalAdbButtonsEnabled(false);
+        if (status != null) {
+            status.setText(enable ? R.string.local_adb_working : R.string.local_adb_working_off);
+        }
+        final boolean persist = isChecked(R.id.switch_local_adb_persist);
+        new Thread(() -> {
+            final LocalAdb.Result result = enable ? LocalAdb.enable(persist) : LocalAdb.disable();
+            DiagnosticLog.i("local-adb", (enable ? "Enable" : "Disable") + " port " + LocalAdb.PORT + ": "
+                    + (result.ok ? "ok" : result.output));
+            runOnUiThread(() -> {
+                localAdbBusy = false;
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                setLocalAdbButtonsEnabled(true);
+                if (result.ok) {
+                    Toast.makeText(this, enable ? R.string.local_adb_enabled_toast : R.string.local_adb_disabled_toast,
+                            Toast.LENGTH_SHORT).show();
+                } else if (result.noRoot) {
+                    showLocalAdbHelp(result.output, enable ? LocalAdb.enableCommand(persist) : LocalAdb.disableCommand());
+                } else {
+                    Toast.makeText(this, getString(R.string.local_adb_failed, result.output), Toast.LENGTH_LONG).show();
+                }
+                refreshLocalAdb();
+            });
+        }, "local-adb-change").start();
+    }
+
+    private void setLocalAdbButtonsEnabled(boolean enabled) {
+        View on = findViewById(R.id.button_local_adb_on);
+        View off = findViewById(R.id.button_local_adb_off);
+        if (on != null) {
+            on.setEnabled(enabled);
+            on.setAlpha(enabled ? 1f : 0.5f);
+        }
+        if (off != null) {
+            off.setEnabled(enabled);
+        }
+    }
+
+    /** No root: explain the one-time computer step, with shortcuts. */
+    private void showLocalAdbHelp(String reason, String rootCommand) {
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.local_adb_no_root_title)
+                .setMessage(getString(R.string.local_adb_no_root_message, reason))
+                .setPositiveButton(R.string.local_adb_open_dev_options, (dialog, which) -> {
+                    try {
+                        startActivity(new Intent(Settings.ACTION_APPLICATION_DEVELOPMENT_SETTINGS));
+                    } catch (RuntimeException e) {
+                        startActivity(new Intent(Settings.ACTION_DEVICE_INFO_SETTINGS));
+                    }
+                })
+                .setNeutralButton(R.string.local_adb_copy_command, (dialog, which) -> {
+                    ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                    if (clipboard != null) {
+                        clipboard.setPrimaryClip(ClipData.newPlainText("adb", "adb tcpip " + LocalAdb.PORT));
+                        Toast.makeText(this, "adb tcpip " + LocalAdb.PORT, Toast.LENGTH_SHORT).show();
+                    }
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void openLog(int section) {
@@ -161,6 +339,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         final AdbLauncher currentLauncher = new AdbLauncher();
         launcher = currentLauncher;
         final HostAddress address = hostAddress;
+        SessionState.connecting(address.toString());
         final ScrcpySessionOptions options = sessionOptions.copy();
         Thread thread = new Thread(() -> {
             AdbLauncher.Session session = null;
@@ -194,6 +373,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (session == null) {
             restoreStartButton();
             DiagnosticLog.i("app", "Connection failed: " + error);
+            SessionState.disconnected(error == null ? "Connection failed" : error);
             Toast.makeText(this, (error == null ? "Connection failed" : error)
                     + "\n(See Logs › Connection log for details)", Toast.LENGTH_LONG).show();
             return;
@@ -383,6 +563,26 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         options.maxSize = maxSize;
         options.videoBitRate = videoBitrate;
         options.maxFps = maxFps;
+
+        String error = AdvancedOptions.apply(OptionsPanel.storedValues(getPreferences()), options);
+        if (error != null) {
+            Toast.makeText(this, error, Toast.LENGTH_LONG).show();
+            return false;
+        }
+        if (!org.las2mile.scrcpy.decoder.Codecs.hasDecoder(org.las2mile.scrcpy.decoder.Codecs.videoMime(options.videoCodec))) {
+            Toast.makeText(this, getString(R.string.codec_unsupported,
+                    org.las2mile.scrcpy.decoder.Codecs.describeId(org.las2mile.scrcpy.decoder.Codecs.videoId(options.videoCodec)),
+                    "All other scrcpy options › Video"), Toast.LENGTH_LONG).show();
+            return false;
+        }
+        int audioId = org.las2mile.scrcpy.decoder.Codecs.audioId(options.audioCodec);
+        if (options.audioEnabled && !org.las2mile.scrcpy.decoder.Codecs.hasDecoder(
+                org.las2mile.scrcpy.decoder.Codecs.audioMime(audioId))) {
+            Toast.makeText(this, getString(R.string.codec_unsupported,
+                    org.las2mile.scrcpy.decoder.Codecs.describeId(audioId), "All other scrcpy options › Audio"),
+                    Toast.LENGTH_LONG).show();
+            return false;
+        }
         sessionOptions = options;
         return true;
     }
@@ -422,6 +622,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         navBar = findViewById(R.id.nav_button_bar);
         statusText = findViewById(R.id.status_text);
 
+        currentHost = address.toString();
         client = new ScrcpyClient(address.host, options, session, this);
         surfaceView.getHolder().addCallback(this);
         if (surfaceView.getHolder().getSurface().isValid()) {
@@ -461,8 +662,14 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     /** Stops the current session (if any) and returns to the settings screen. */
     private void stopMirroring(String message) {
         unregisterProximity();
+        clipboardSync.stop();
         ScrcpyClient current = client;
         client = null;
+        boolean wasActive = SessionState.getStatus() == SessionState.Status.CONNECTED
+                || SessionState.getStatus() == SessionState.Status.CONNECTING;
+        if (current != null || wasActive) {
+            SessionState.disconnected(message);
+        }
         if (current != null) {
             current.stop();
         }
@@ -474,9 +681,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         showSystemUi();
         showSettings();
-        if (message != null) {
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
-        }
+        Toast.makeText(this, message == null ? getString(R.string.toast_disconnected)
+                : getString(R.string.toast_disconnected_reason, message), Toast.LENGTH_LONG).show();
     }
 
     @Override
@@ -484,7 +690,19 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (statusText != null) {
             statusText.setVisibility(View.GONE);
         }
+        String name = client == null ? null : client.getDeviceName();
+        SessionState.connected(currentHost, name);
+        Toast.makeText(this, getString(R.string.toast_connected, SessionState.describe(currentHost, name)),
+                Toast.LENGTH_SHORT).show();
+        if (sessionOptions.clipboardAutosync && !sessionOptions.noControl) {
+            clipboardSync.start();
+        }
         onVideoSizeChanged(width, height);
+    }
+
+    @Override
+    public void onDeviceClipboard(String text) {
+        clipboardSync.onDeviceClipboard(text);
     }
 
     @Override
@@ -626,6 +844,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
 
     @Override
     protected void onDestroy() {
+        SessionState.removeListener(this);
+        clipboardSync.stop();
+        boolean hadSession = launcher != null || client != null;
         if (launcher != null) {
             launcher.cancel();
             launcher = null;
@@ -634,6 +855,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (client != null) {
             client.stop();
             client = null;
+        }
+        if (hadSession) {
+            SessionState.disconnected(null);
         }
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
             BackCallbacks.unregister(this, backCallback);

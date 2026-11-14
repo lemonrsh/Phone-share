@@ -8,8 +8,8 @@ android {
         applicationId "org.las2mile.scrcpy"
         minSdk 21
         targetSdk 36
-        versionCode 11
-        versionName "5.0.1-r6"
+        versionCode 12
+        versionName "5.0.1-r7"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 

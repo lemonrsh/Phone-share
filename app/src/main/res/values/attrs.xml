@@ -5,6 +5,10 @@
     <attr name="colorTextSecondary" format="color" />
     <attr name="colorCardOutline" format="color" />
     <attr name="colorAccentScrcpy" format="color" />
+    <attr name="colorOptionsBackground" format="color" />
+    <attr name="colorOptionsOutline" format="color" />
+    <attr name="colorOptionsAccent" format="color" />
+    <attr name="colorStatusBackground" format="color" />
 
     <!-- Kept for older button bar layouts in the mirrored-screen views. -->
     <declare-styleable name="ButtonBarContainerTheme">

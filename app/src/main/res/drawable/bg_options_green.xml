@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The green box that groups every scrcpy option. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <solid android:color="?attr/colorOptionsBackground" />
+    <stroke android:width="2dp" android:color="?attr/colorOptionsOutline" />
+    <corners android:radius="18dp" />
+</shape>

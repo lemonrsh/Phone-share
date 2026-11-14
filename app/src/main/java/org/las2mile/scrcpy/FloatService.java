@@ -52,11 +52,14 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     private ScrcpyClient client;
     private int remoteWidth = 1080;
     private int remoteHeight = 1920;
+    private ClipboardSync clipboardSync;
+    private String notificationText;
 
     @Override
     public void onCreate() {
         super.onCreate();
         LogActivity.installCrashRecorder(this);
+        clipboardSync = new ClipboardSync(this, () -> client);
     }
 
     @Override
@@ -98,6 +101,8 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         }
         pip.setStatus(getString(R.string.status_starting));
         pip.showLoading(true);
+        SessionState.connecting(currentHost);
+        updateNotification(getString(R.string.notification_connecting, currentHost));
         launch(address, sessionOptions.copy());
         return START_NOT_STICKY;
     }
@@ -135,7 +140,9 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         }
         launcher = null;
         if (session == null) {
-            showFailure(error == null ? "Connection failed" : error);
+            String reason = error == null ? "Connection failed" : error;
+            SessionState.disconnected(reason);
+            showFailure(reason);
             return;
         }
         client = new ScrcpyClient(address.host, options, session, this);
@@ -150,7 +157,20 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         if (pip != null) {
             pip.showLoading(false);
         }
+        String name = client == null ? null : client.getDeviceName();
+        String who = SessionState.describe(currentHost, name);
+        SessionState.connected(currentHost, name);
+        showToast(getString(R.string.toast_connected, who));
+        updateNotification(getString(R.string.notification_connected, who));
+        if (sessionOptions.clipboardAutosync && !sessionOptions.noControl) {
+            clipboardSync.start();
+        }
         onVideoSizeChanged(width, height);
+    }
+
+    @Override
+    public void onDeviceClipboard(String text) {
+        clipboardSync.onDeviceClipboard(text);
     }
 
     @Override
@@ -165,6 +185,14 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     @Override
     public void onDisconnected(String message) {
         client = null;
+        clipboardSync.stop();
+        SessionState.disconnected(message);
+        if (pip != null) {
+            // Without a window, showFailure() already shows the message as a toast.
+            showToast(message == null ? getString(R.string.toast_disconnected)
+                    : getString(R.string.toast_disconnected_reason, message));
+        }
+        updateNotification(getString(R.string.notification_disconnected));
         showFailure(message);
     }
 
@@ -250,8 +278,19 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
 
     @Override
     public void onDestroy() {
+        boolean active = SessionState.getStatus() == SessionState.Status.CONNECTED
+                || SessionState.getStatus() == SessionState.Status.CONNECTING;
+        boolean hadSession = client != null || launcher != null;
         stopSession();
         removeWindow();
+        if (clipboardSync != null) {
+            clipboardSync.stop();
+        }
+        if (hadSession && active) {
+            // Closed by the user (swipe away or notification).
+            SessionState.disconnected(null);
+            showToast(getString(R.string.toast_disconnected));
+        }
         mainHandler.removeCallbacksAndMessages(null);
         super.onDestroy();
     }
@@ -321,6 +360,18 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         }
     }
 
+    private void updateNotification(String text) {
+        notificationText = text;
+        try {
+            NotificationManager manager = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+            if (manager != null) {
+                manager.notify(NOTIFICATION_ID, buildNotification());
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not update the notification", e);
+        }
+    }
+
     @SuppressWarnings("deprecation")
     private Notification buildNotification() {
         Notification.Builder builder;
@@ -347,8 +398,8 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         PendingIntent openPendingIntent = PendingIntent.getActivity(this, 0, openIntent, pendingFlags);
 
         return builder
-                .setSmallIcon(android.R.drawable.ic_media_play)
-                .setContentTitle(getString(R.string.notification_title))
+                .setSmallIcon(R.drawable.ic_notification)
+                .setContentTitle(notificationText != null ? notificationText : getString(R.string.notification_title))
                 .setContentText(getString(R.string.notification_text))
                 .setContentIntent(openPendingIntent)
                 .setOngoing(true)
