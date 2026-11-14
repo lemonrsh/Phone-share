@@ -317,6 +317,18 @@ public final class AdbLauncher {
     }
 
     private static void connectSocket(Socket socket, HostAddress address) throws LaunchException {
+        if (address.isTunnel()) {
+            try {
+                DiagnosticLog.i("adb", "Opening the Cloudflare tunnel to " + address.host + " (adb)");
+                CloudTunnel.connect(socket, address.host, CloudTunnel.TARGET_ADB, SOCKET_CONNECT_TIMEOUT_MS);
+                socket.setTcpNoDelay(true);
+                return;
+            } catch (CloudTunnel.TunnelException e) {
+                throw new LaunchException(e.getMessage(), e);
+            } catch (IOException | RuntimeException e) {
+                throw new LaunchException("Could not reach the share address " + address.host + ": " + describe(e), e);
+            }
+        }
         try {
             socket.connect(new InetSocketAddress(address.host, address.port), SOCKET_CONNECT_TIMEOUT_MS);
             socket.setTcpNoDelay(true);

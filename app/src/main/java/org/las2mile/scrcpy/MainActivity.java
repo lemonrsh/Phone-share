@@ -98,7 +98,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         });
         showSettings();
         SessionState.addListener(this);
+        ShareService.addListener(shareListener);
     }
+
+    private final ShareService.Listener shareListener = this::renderCloudShare;
 
     // ---------------------------------------------------------------- settings screen
 
@@ -123,8 +126,79 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setupCollapsible(R.id.header_normal, R.id.body_normal, R.string.section_scrcpy);
         setupCollapsible(R.id.header_advanced, R.id.options_container, R.string.options_more_title);
         setupLocalAdbCard();
+        setupCloudShareCard();
         updateSessionStatusView();
         renderIncomingSessions();
+    }
+
+    // ---------------------------------------------------------------- share over the internet
+
+    private void setupCloudShareCard() {
+        Button toggle = findViewById(R.id.button_cloud_share);
+        if (toggle == null) {
+            return;
+        }
+        toggle.setOnClickListener(view -> {
+            ShareService.Phase phase = ShareService.phase();
+            boolean active = phase == ShareService.Phase.STARTING || phase == ShareService.Phase.WAITING
+                    || phase == ShareService.Phase.ONLINE;
+            Intent intent = new Intent(this, ShareService.class)
+                    .setAction(active ? ShareService.ACTION_STOP : ShareService.ACTION_START);
+            try {
+                if (!active && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent);
+                } else {
+                    startService(intent);
+                }
+            } catch (RuntimeException e) {
+                Toast.makeText(this, getString(R.string.share_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+            }
+        });
+        findViewById(R.id.button_cloud_share_copy).setOnClickListener(view -> {
+            String code = ShareService.shareCode();
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (code != null && clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("scrcpy share code", code));
+                Toast.makeText(this, R.string.share_copied, Toast.LENGTH_SHORT).show();
+            }
+        });
+        findViewById(R.id.button_cloud_share_send).setOnClickListener(view -> {
+            String code = ShareService.shareCode();
+            if (code == null) {
+                return;
+            }
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.share_send_text, code));
+            try {
+                startActivity(Intent.createChooser(send, getString(R.string.share_send)));
+            } catch (RuntimeException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+        renderCloudShare();
+    }
+
+    private void renderCloudShare() {
+        Button toggle = mirroring ? null : (Button) findViewById(R.id.button_cloud_share);
+        if (toggle == null) {
+            return;
+        }
+        TextView status = findViewById(R.id.text_cloud_share_status);
+        TextView code = findViewById(R.id.text_cloud_share_code);
+        ShareService.Phase phase = ShareService.phase();
+        boolean active = phase == ShareService.Phase.STARTING || phase == ShareService.Phase.WAITING
+                || phase == ShareService.Phase.ONLINE;
+        toggle.setText(active ? R.string.share_stop : R.string.share_start);
+        toggle.setBackgroundResource(active ? R.drawable.bg_disconnect_button : R.drawable.bg_start_button);
+        String message = ShareService.message();
+        status.setVisibility(message == null ? View.GONE : View.VISIBLE);
+        status.setText(message == null ? "" : message);
+        String shareCode = ShareService.shareCode();
+        boolean showCode = phase == ShareService.Phase.ONLINE && shareCode != null;
+        code.setVisibility(showCode ? View.VISIBLE : View.GONE);
+        code.setText(showCode ? shareCode : "");
+        findViewById(R.id.button_cloud_share_copy).setEnabled(showCode);
+        findViewById(R.id.button_cloud_share_send).setEnabled(showCode);
     }
 
     // ---------------------------------------------------------------- incoming sessions
@@ -142,6 +216,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             View item = inflater.inflate(R.layout.item_incoming_session, container, false);
             final String name = session.clientName.isEmpty() ? getString(R.string.incoming_unknown_name) : session.clientName;
             String ip = session.clientIp.isEmpty() ? "?" : session.clientIp;
+            if ("127.0.0.1".equals(ip)) {
+                ip = getString(R.string.incoming_via_cloudflare); // came in through ShareService
+            }
             String since = session.startMillis > 0 ? timeFormat.format(new java.util.Date(session.startMillis)) : "?";
             ((TextView) item.findViewById(R.id.incoming_title)).setText(getString(R.string.incoming_title, name));
             ((TextView) item.findViewById(R.id.incoming_detail)).setText(getString(R.string.incoming_detail, ip, since));
@@ -680,7 +757,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         HostAddress address = HostAddress.parse(serverText);
         if (address == null) {
-            Toast.makeText(this, "Invalid address. Use an IP such as 192.168.1.42 or 192.168.1.42:5555",
+            Toast.makeText(this, "Invalid address. Use an IP such as 192.168.1.42 or 192.168.1.42:5555, or a share code such as "
+                    + "blue-river-cat.trycloudflare.com#123456",
                     Toast.LENGTH_LONG).show();
             return false;
         }
@@ -1056,6 +1134,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @Override
     protected void onDestroy() {
         SessionState.removeListener(this);
+        ShareService.removeListener(shareListener);
         clipboardSync.stop();
         boolean hadSession = launcher != null || client != null;
         if (launcher != null) {

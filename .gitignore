@@ -7,3 +7,7 @@ local.properties
 captures/
 .externalNativeBuild/
 .cxx/
+
+# Built by CI (see .github/workflows/android-apk.yml): never commit the cloudflared binaries.
+app/src/main/jniLibs/**/libcloudflared.so
+.cloudflared-src/

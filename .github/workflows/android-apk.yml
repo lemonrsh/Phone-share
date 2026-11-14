@@ -17,6 +17,15 @@ on:
         required: true
         type: string
         default: v5.0.1
+      prerelease:
+        description: Mark the release as a pre-release (test builds)
+        required: false
+        type: boolean
+        default: false
+
+env:
+  # Cloudflare connector bundled for "Share this phone over the internet".
+  CLOUDFLARED_VERSION: '2026.11.0'
 
 permissions:
   contents: read
@@ -40,6 +49,59 @@ jobs:
         uses: android-actions/setup-android@v4
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
+
+      - name: Restore cloudflared for Android
+        id: cloudflared-cache
+        uses: actions/cache@v6
+        with:
+          path: app/src/main/jniLibs
+          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-v1
+
+      - name: Check out cloudflared
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v7
+        with:
+          repository: cloudflare/cloudflared
+          ref: ${{ env.CLOUDFLARED_VERSION }}
+          path: .cloudflared-src
+
+      - name: Set up Go
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: .cloudflared-src/go.mod
+          cache-dependency-path: .cloudflared-src/go.sum
+
+      - name: Build cloudflared for Android (arm64-v8a, armeabi-v7a)
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
+          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          if [[ ! -d "$TOOLCHAIN" ]]; then
+            ndk_package=$(sdkmanager --list 2>/dev/null | grep -oE 'ndk;[0-9][0-9.]*[0-9]' | sort -V | tail -n 1)
+            echo "Installing $ndk_package"
+            yes | sdkmanager "$ndk_package" >/dev/null
+            NDK="$ANDROID_SDK_ROOT/ndk/${ndk_package#ndk;}"
+            TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
+          fi
+          test -d "$TOOLCHAIN" || { echo "Android NDK not found ($NDK)" >&2; exit 1; }
+          echo "Using NDK $NDK"
+          OUT="$GITHUB_WORKSPACE/app/src/main/jniLibs"
+          cd .cloudflared-src
+          # GOOS=android with cgo (like Termux) so that DNS and certificates use Android's own.
+          build() {
+            local abi=$1 goarch=$2 cc=$3
+            mkdir -p "$OUT/$abi"
+            env CGO_ENABLED=1 GOOS=android GOARCH="$goarch" ${4:+GOARM=$4} CC="$TOOLCHAIN/$cc" \
+              go build -trimpath \
+              -ldflags "-s -w -X main.Version=$CLOUDFLARED_VERSION -extldflags '-Wl,-z,max-page-size=16384'" \
+              -o "$OUT/$abi/libcloudflared.so" ./cmd/cloudflared
+            file "$OUT/$abi/libcloudflared.so" || true
+            ls -l "$OUT/$abi/libcloudflared.so"
+          }
+          build arm64-v8a arm64 aarch64-linux-android21-clang
+          build armeabi-v7a arm armv7a-linux-androideabi21-clang 7
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.4.1
@@ -98,6 +160,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -117,7 +180,11 @@ jobs:
           fi
           cp "$release_apk" "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk"
           cp "$debug_apk" "dist/scrcpy-android-${RELEASE_TAG}-debug.apk"
-          gh release create "$RELEASE_TAG" \
+          extra=()
+          if [[ "$PRERELEASE" == "true" ]]; then
+            extra+=(--prerelease)
+          fi
+          gh release create "$RELEASE_TAG" "${extra[@]}" \
             "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk" \
             "dist/scrcpy-android-${RELEASE_TAG}-debug.apk" \
             --repo "$GITHUB_REPOSITORY" \

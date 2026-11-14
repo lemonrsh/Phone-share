@@ -8,8 +8,8 @@ android {
         applicationId "org.las2mile.scrcpy"
         minSdk 21
         targetSdk 36
-        versionCode 16
-        versionName "5.0.1-r11"
+        versionCode 17
+        versionName "5.0.1-cloudflared-test"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -38,6 +38,16 @@ android {
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+        }
+    }
+
+    // cloudflared (Cloudflare share test) is shipped as jniLibs/<abi>/libcloudflared.so, built for
+    // Android by CI. Legacy packaging makes Android extract it to the native-library folder,
+    // the only app folder it may be executed from. It is a stripped Go program: do not strip it.
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+            keepDebugSymbols.add('**/libcloudflared.so')
         }
     }
 
