@@ -123,4 +123,4 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "scrcpy Android $RELEASE_TAG" \
-            --notes "Built from $GITHUB_SHA. The release APK is unsigned unless release signing is configured. The debug-signed APK is included for testing only; its runner-generated debug key is not stable for future updates."
+            --notes "Built from $GITHUB_SHA. The release APK is unsigned unless release signing is configured. Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings (from 5.0.1-r9 on)."

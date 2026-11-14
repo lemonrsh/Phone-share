@@ -9,6 +9,9 @@
     <attr name="colorOptionsOutline" format="color" />
     <attr name="colorOptionsAccent" format="color" />
     <attr name="colorStatusBackground" format="color" />
+    <attr name="colorAdvancedBackground" format="color" />
+    <attr name="colorAdvancedOutline" format="color" />
+    <attr name="colorAdvancedAccent" format="color" />
 
     <!-- Kept for older button bar layouts in the mirrored-screen views. -->
     <declare-styleable name="ButtonBarContainerTheme">

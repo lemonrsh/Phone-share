@@ -47,7 +47,7 @@ final class OptionsPanel {
         this.container = container;
         this.textPrimary = themeColor(R.attr.colorTextPrimary);
         this.textSecondary = themeColor(R.attr.colorTextSecondary);
-        this.accent = themeColor(R.attr.colorOptionsAccent);
+        this.accent = themeColor(R.attr.colorAdvancedAccent);
     }
 
     /** Stored values (option key to value) for {@link AdvancedOptions#apply}. */

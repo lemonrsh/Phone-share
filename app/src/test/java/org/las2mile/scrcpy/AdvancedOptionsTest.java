@@ -123,4 +123,37 @@ public class AdvancedOptionsTest {
         assertFalse(command, command.contains("tcp_port=1"));
         assertTrue(options.cameraSource);
     }
+
+    @Test
+    public void normalAudioDupForcesPlaybackSource() {
+        Map<String, String> values = new HashMap<>();
+        values.put("audio_source", "mic");
+        ScrcpySessionOptions options = new ScrcpySessionOptions();
+        options.audioEnabled = true;
+        assertNull(AdvancedOptions.apply(values, options));
+        AdvancedOptions.applyNormal(options, true, true);
+        assertEquals("playback", options.extraArgs.get("audio_source"));
+        assertEquals("true", options.extraArgs.get("audio_dup"));
+        assertEquals("true", options.extraArgs.get("keep_active"));
+        String command = AdbLauncher.buildServerCommand(options, "10.0.0.2");
+        assertTrue(command, command.contains(" audio_dup=true"));
+        assertTrue(command, command.contains(" audio_source=playback"));
+        assertFalse(command, command.contains("audio_source=mic"));
+    }
+
+    @Test
+    public void audioDupNeedsAudio() {
+        ScrcpySessionOptions options = new ScrcpySessionOptions();
+        options.audioEnabled = false;
+        assertNull(AdvancedOptions.apply(new HashMap<String, String>(), options));
+        AdvancedOptions.applyNormal(options, true, false);
+        assertFalse(options.extraArgs.containsKey("audio_dup"));
+        assertFalse(options.extraArgs.containsKey("keep_active"));
+    }
+
+    @Test
+    public void movedOptionsAreNotInTheAdvancedBox() {
+        assertNull(AdvancedOptions.find("audio_dup"));
+        assertNull(AdvancedOptions.find("keep_active"));
+    }
 }

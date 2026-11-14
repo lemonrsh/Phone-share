@@ -8,8 +8,8 @@ android {
         applicationId "org.las2mile.scrcpy"
         minSdk 21
         targetSdk 36
-        versionCode 13
-        versionName "5.0.1-r8"
+        versionCode 14
+        versionName "5.0.1-r9"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
     }
 
@@ -18,7 +18,23 @@ android {
         targetCompatibility JavaVersion.VERSION_1_8
     }
 
+    // A fixed debug key (committed on purpose, it protects nothing) so that every released
+    // debug APK has the same signature: updates install over the old version and keep the
+    // saved settings instead of requiring an uninstall.
+    signingConfigs {
+        debug {
+            storeFile file('debug.keystore')
+            storeType 'pkcs12'
+            storePassword 'android'
+            keyAlias 'androiddebugkey'
+            keyPassword 'android'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.debug
+        }
         release {
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'

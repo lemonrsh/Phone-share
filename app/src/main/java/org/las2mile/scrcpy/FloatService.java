@@ -31,6 +31,8 @@ import org.las2mile.scrcpy.pip.FloatingPip;
 public class FloatService extends Service implements ScrcpyClient.Listener, FloatingPip.Callbacks {
     public static final String ACTION_START = "org.las2mile.scrcpy.action.START_FLOATING";
     public static final String ACTION_STOP = "org.las2mile.scrcpy.action.STOP_FLOATING";
+    /** Continue the live session handed over by the full-screen viewer (see SessionHandoff). */
+    public static final String ACTION_ADOPT = "org.las2mile.scrcpy.action.ADOPT_SESSION";
     public static final String EXTRA_HOST = "org.las2mile.scrcpy.extra.HOST";
 
     private static final String TAG = "FloatService";
@@ -78,6 +80,9 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
             stopSelf();
             return START_NOT_STICKY;
         }
+        if (ACTION_ADOPT.equals(intent.getAction())) {
+            return adoptSession();
+        }
 
         HostAddress address = HostAddress.parse(intent.getStringExtra(EXTRA_HOST));
         if (address == null) {
@@ -104,6 +109,49 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         SessionState.connecting(currentHost);
         updateNotification(getString(R.string.notification_connecting, currentHost));
         launch(address, sessionOptions.copy());
+        return START_NOT_STICKY;
+    }
+
+    private int adoptSession() {
+        SessionHandoff.Item item = SessionHandoff.take();
+        if (item == null || !item.client.isConnected()) {
+            if (item != null) {
+                item.client.stop();
+                SessionState.disconnected(null);
+            }
+            if (client == null && launcher == null) {
+                stopSelf();
+            }
+            return START_NOT_STICKY;
+        }
+        mainHandler.removeCallbacks(autoClose);
+        stopSession();
+        sessionOptions = item.options.copy();
+        currentHost = item.host;
+        if (pip != null && pipControlEnabled == sessionOptions.noControl) {
+            removeWindow();
+        }
+        remoteWidth = item.client.getVideoWidth() > 0 ? item.client.getVideoWidth() : remoteWidth;
+        remoteHeight = item.client.getVideoHeight() > 0 ? item.client.getVideoHeight() : remoteHeight;
+        if (!ensureWindow()) {
+            item.client.stop();
+            SessionState.disconnected("Could not show the floating window");
+            stopSelf();
+            return START_NOT_STICKY;
+        }
+        client = item.client;
+        client.setListener(this);
+        if (surface != null && surface.isValid()) {
+            client.setSurface(surface);
+        }
+        pip.showLoading(false);
+        pip.setVideoSize(remoteWidth, remoteHeight);
+        DiagnosticLog.i("app", "Session moved to the floating window");
+        updateNotification(getString(R.string.notification_connected,
+                SessionState.describe(currentHost, client.getDeviceName())));
+        if (sessionOptions.clipboardAutosync && !sessionOptions.noControl) {
+            clipboardSync.start();
+        }
         return START_NOT_STICKY;
     }
 
