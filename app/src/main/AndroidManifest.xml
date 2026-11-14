@@ -33,6 +33,11 @@
             </intent-filter>
         </activity>
 
+        <activity
+            android:name=".LogActivity"
+            android:exported="false"
+            android:label="@string/logs_title" />
+
         <service
             android:name=".FloatService"
             android:enabled="true"

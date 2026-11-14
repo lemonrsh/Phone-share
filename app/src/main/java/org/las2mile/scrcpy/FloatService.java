@@ -46,11 +46,18 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     private FloatingPip pip;
     private boolean pipControlEnabled;
     private Surface surface;
+    private String currentHost;
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
     private AdbLauncher launcher;
     private ScrcpyClient client;
     private int remoteWidth = 1080;
     private int remoteHeight = 1920;
+
+    @Override
+    public void onCreate() {
+        super.onCreate();
+        LogActivity.installCrashRecorder(this);
+    }
 
     @Override
     public IBinder onBind(Intent intent) {
@@ -76,6 +83,7 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
             return START_NOT_STICKY;
         }
         sessionOptions = ScrcpySessionOptions.fromIntent(intent);
+        currentHost = address.toString();
 
         // A new start request replaces any running session.
         mainHandler.removeCallbacks(autoClose);
@@ -167,6 +175,7 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
     private void showFailure(String message) {
         String text = message == null ? "Disconnected." : message;
         Log.w(TAG, "Session failed: " + text);
+        DiagnosticLog.i("app", "Floating window shows error: " + text);
         if (pip == null) {
             showToast(text);
             stopSelf();
@@ -208,6 +217,22 @@ public class FloatService extends Service implements ScrcpyClient.Listener, Floa
         if (client != null) {
             client.sendKeyEvent(keycode);
         }
+    }
+
+    @Override
+    public void onErrorTapped() {
+        Intent intent = new Intent(this, LogActivity.class)
+                .putExtra(LogActivity.EXTRA_SECTION, LogActivity.SECTION_CONNECTION_LOG)
+                .putExtra(LogActivity.EXTRA_HOST, currentHost)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_CLEAR_TOP);
+        try {
+            startActivity(intent);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "Could not open the log", e);
+            return;
+        }
+        // The log screen replaces the failed window.
+        stopSelf();
     }
 
     @Override
