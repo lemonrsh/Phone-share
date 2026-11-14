@@ -3,6 +3,9 @@ package org.las2mile.scrcpy;
 import android.annotation.SuppressLint;
 import android.annotation.TargetApi;
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.content.ClipData;
+import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.content.pm.ActivityInfo;
@@ -94,6 +97,43 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         final Button startButton = findViewById(R.id.button_start);
         loadSavedPreferences();
         startButton.setOnClickListener(view -> onStartClicked(startButton));
+        findViewById(R.id.button_copy_adb_key).setOnClickListener(view -> showAdbKeyDialog());
+    }
+
+    /** Shows a root command that adds this phone's ADB key to the target's adb_keys. */
+    private void showAdbKeyDialog() {
+        new Thread(() -> {
+            String key;
+            try {
+                // May generate the key pair the first time, which takes a moment.
+                key = AdbLauncher.publicKeyLine(getApplicationContext());
+            } catch (AdbLauncher.LaunchException e) {
+                final String message = e.getMessage();
+                runOnUiThread(() -> Toast.makeText(this, message, Toast.LENGTH_LONG).show());
+                return;
+            }
+            final String command = "su -c 'mkdir -p /data/misc/adb && echo \"" + key
+                    + "\" >> /data/misc/adb/adb_keys && chown system:shell /data/misc/adb/adb_keys"
+                    + " && chmod 640 /data/misc/adb/adb_keys; restorecon /data/misc/adb/adb_keys;"
+                    + " setprop service.adb.tcp.port 5555; stop adbd; start adbd'";
+            runOnUiThread(() -> {
+                if (isFinishing()) {
+                    return;
+                }
+                new AlertDialog.Builder(this)
+                        .setTitle(R.string.adb_key_title)
+                        .setMessage(getString(R.string.adb_key_message, command))
+                        .setPositiveButton(R.string.adb_key_copy, (dialog, which) -> {
+                            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+                            if (clipboard != null) {
+                                clipboard.setPrimaryClip(ClipData.newPlainText("adb key command", command));
+                                Toast.makeText(this, R.string.adb_key_copied, Toast.LENGTH_LONG).show();
+                            }
+                        })
+                        .setNegativeButton(android.R.string.cancel, null)
+                        .show();
+            });
+        }, "scrcpy-adb-key").start();
     }
 
     private void onStartClicked(Button startButton) {

@@ -63,4 +63,25 @@ public class ShellOutputTest {
         assertEquals("SCRCPY_READY", output.await(Pattern.compile("SCRCPY_READY"), 5000));
         writer.join();
     }
+
+    @Test
+    public void lastServerLinesSkipLauncherMarkersAndPrompt() {
+        ShellOutput output = new ShellOutput();
+        output.append("SCRCPY_HASH_abc_END\r\n:/ $ ");
+        assertNull(output.lastServerLines(3));
+        output.append("[server] INFO: Device: Pixel\r\n");
+        output.append("Killed\r\n");
+        output.close();
+        assertNull(output.lastErrorLine());
+        assertEquals("[server] INFO: Device: Pixel / Killed", output.lastServerLines(3));
+        assertEquals("Killed", output.lastServerLines(1));
+    }
+
+    @Test
+    public void errorLineAfterPromptIsFound() {
+        ShellOutput output = new ShellOutput();
+        output.append("SCRCPY_HASH_abc_END\r\n:/ $ [server] ERROR: Could not open video stream\r\n");
+        output.close();
+        assertEquals("[server] ERROR: Could not open video stream", output.lastErrorLine());
+    }
 }

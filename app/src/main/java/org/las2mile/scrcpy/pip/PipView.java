@@ -78,6 +78,7 @@ public final class PipView extends FrameLayout {
     private final TextureView videoView;
     private final LinearLayout loadingView;
     private final TextView statusText;
+    private final ProgressBar progress;
     private final LinearLayout navBar;
     private final View handle;
     private final GestureDetector gestureDetector;
@@ -154,7 +155,7 @@ public final class PipView extends FrameLayout {
         loadingView.setOrientation(LinearLayout.VERTICAL);
         loadingView.setGravity(Gravity.CENTER);
         loadingView.setBackgroundColor(0xFF111318);
-        ProgressBar progress = new ProgressBar(context);
+        progress = new ProgressBar(context);
         progress.setIndeterminate(true);
         loadingView.addView(progress, new LinearLayout.LayoutParams(dp(32), dp(32)));
         statusText = new TextView(context);
@@ -218,8 +219,23 @@ public final class PipView extends FrameLayout {
         statusText.setText(text);
     }
 
+    /** Replaces the video with an error message that stays until the window is swiped away. */
+    public void showError(String message) {
+        hideNavBar();
+        progress.setVisibility(GONE);
+        statusText.setTextColor(Color.WHITE);
+        statusText.setText(message + "\n\nSwipe the window away to close it.");
+        loadingView.setBackgroundColor(0xFF3A1515);
+        loadingView.animate().cancel();
+        loadingView.setAlpha(1f);
+        loadingView.setVisibility(VISIBLE);
+    }
+
     public void showLoading(boolean show) {
         if (show) {
+            progress.setVisibility(VISIBLE);
+            statusText.setTextColor(0xCCFFFFFF);
+            loadingView.setBackgroundColor(0xFF111318);
             loadingView.animate().cancel();
             loadingView.setAlpha(1f);
             loadingView.setVisibility(VISIBLE);

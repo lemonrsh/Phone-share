@@ -25,6 +25,11 @@
     <string name="notification_title">Mirroring in a floating window</string>
     <string name="notification_text">Drag the window to the bottom or fling it away to close it.</string>
     <string name="notification_stop">Stop</string>
+    <string name="button_copy_adb_key">Connection keeps failing? Authorize with root…</string>
+    <string name="adb_key_title">Authorize this phone on a rooted target</string>
+    <string name="adb_key_message">The target must accept this phone\'s ADB key. Normally it asks with an \"Allow USB debugging?\" prompt. If that prompt never appears or the target hangs up, run this command on the rooted target (for example in Termux), then tap Start again:\n\n%1$s</string>
+    <string name="adb_key_copy">Copy command</string>
+    <string name="adb_key_copied">Command copied. Paste and run it on the target.</string>
     <string name="switch_dark_mode">Dark mode</string>
     <string name="switch_floating_mode">Use a floating window</string>
     <string name="switch0">No control</string>
