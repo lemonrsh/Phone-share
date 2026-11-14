@@ -75,6 +75,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        LogActivity.installCrashRecorder(this);
         boolean darkMode = getPreferences().getBoolean(PREFERENCE_DARK_MODE, false);
         setTheme(darkMode ? R.style.AppThemeDark : R.style.AppTheme);
         super.onCreate(savedInstanceState);
@@ -98,6 +99,13 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         loadSavedPreferences();
         startButton.setOnClickListener(view -> onStartClicked(startButton));
         findViewById(R.id.button_copy_adb_key).setOnClickListener(view -> showAdbKeyDialog());
+        findViewById(R.id.button_connection_log).setOnClickListener(view -> openLog(LogActivity.SECTION_CONNECTION_LOG));
+        findViewById(R.id.button_app_log).setOnClickListener(view -> openLog(LogActivity.SECTION_APP_LOG));
+    }
+
+    private void openLog(int section) {
+        saveHostField();
+        startActivity(new Intent(this, LogActivity.class).putExtra(LogActivity.EXTRA_SECTION, section));
     }
 
     /** Shows a root command that adds this phone's ADB key to the target's adb_keys. */
@@ -185,7 +193,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         launcher = null;
         if (session == null) {
             restoreStartButton();
-            Toast.makeText(this, error == null ? "Connection failed" : error, Toast.LENGTH_LONG).show();
+            DiagnosticLog.i("app", "Connection failed: " + error);
+            Toast.makeText(this, (error == null ? "Connection failed" : error)
+                    + "\n(See Logs › Connection log for details)", Toast.LENGTH_LONG).show();
             return;
         }
         startMirroring(session, address, options);

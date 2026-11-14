@@ -16,6 +16,14 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
 
 ### Troubleshooting the connection
 
+Open **Logs** at the bottom of the main screen (no root needed on either device):
+
+- **Connection log**: every step of each attempt: TCP connect, ADB authorization, the shell commands sent, and everything the target's shell and the scrcpy server printed.
+- **App log**: this app's own logcat, plus the stack trace of the last app crash, if there was one.
+- **Target**: tap **Fetch from target** to read diagnostics from the other device over ADB: device and Android version, the installed server file, a scrcpy server self-test, and the relevant part of the target's logcat.
+
+Every section has **Copy** and **Share** buttons. When the floating window shows an error, tap it to open the connection log.
+
 If anything fails, the floating window stays open and shows the exact reason (swipe it away to close).
 
 - **"ADB is not listening on …"**: ADB over TCP is not running on the target. Run `adb tcpip 5555`, or as root `su -c 'setprop service.adb.tcp.port 5555; stop adbd; start adbd'`.

@@ -92,6 +92,8 @@ public final class ScrcpyClient {
         if (stopped.get() || !running.compareAndSet(false, true)) {
             return;
         }
+        DiagnosticLog.i("client", "Connecting to the server at " + host + ":" + ScrcpySessionOptions.SERVER_PORT
+                + " (audio=" + options.audioEnabled + ", control=" + !options.noControl + ")");
         videoThread = new Thread(this::runVideo, "scrcpy-video");
         videoThread.setPriority(Thread.MAX_PRIORITY);
         videoThread.start();
@@ -255,10 +257,12 @@ public final class ScrcpyClient {
         } catch (IOException | RuntimeException e) {
             if (running.get()) {
                 Log.w(TAG, "Video stream stopped", e);
+                DiagnosticLog.e("client", "Video stream stopped", e);
             }
             failure = connected ? "Connection lost: " + describe(e) : describeStartupFailure(e);
         } finally {
             if (running.get()) {
+                DiagnosticLog.i("client", "Session ended: " + failure);
                 notifyDisconnected(failure);
             } else {
                 // stop() may have run while sockets were still being opened.
@@ -288,6 +292,7 @@ public final class ScrcpyClient {
             }
         }
         videoSocket = video;
+        DiagnosticLog.i("client", "Video socket connected");
         if (options.audioEnabled) {
             audioSocket = openSocket(256 * 1024);
         }
@@ -328,6 +333,8 @@ public final class ScrcpyClient {
         byte[] deviceName = new byte[64];
         input.readFully(deviceName);
         int codec = input.readInt();
+        DiagnosticLog.i("client", "Handshake OK: device '" + new String(deviceName, java.nio.charset.StandardCharsets.UTF_8)
+                .trim() + "', codec 0x" + Integer.toHexString(codec));
         if (codec == 0 || codec == 1) {
             throw new IOException("The remote device could not start screen capture.");
         }

@@ -59,6 +59,9 @@ public final class PipView extends FrameLayout {
         void onRemoteTouch(MotionEvent event, int videoWidth, int videoHeight);
 
         void onKey(int keycode);
+
+        /** The error card was tapped. */
+        void onErrorTapped();
     }
 
     private static final int MODE_NONE = 0;
@@ -85,6 +88,7 @@ public final class PipView extends FrameLayout {
     private final Runnable hideNavRunnable = this::hideNavBar;
 
     private Surface surface;
+    private boolean errorShown;
     private VelocityTracker velocityTracker;
     private int mode = MODE_NONE;
     private boolean downOnHandle;
@@ -193,7 +197,9 @@ public final class PipView extends FrameLayout {
         gestureDetector = new GestureDetector(context, new GestureDetector.SimpleOnGestureListener() {
             @Override
             public boolean onSingleTapConfirmed(MotionEvent event) {
-                if (controlEnabled) {
+                if (errorShown) {
+                    PipView.this.listener.onErrorTapped();
+                } else if (controlEnabled) {
                     toggleNavBar();
                 }
                 return true;
@@ -221,10 +227,11 @@ public final class PipView extends FrameLayout {
 
     /** Replaces the video with an error message that stays until the window is swiped away. */
     public void showError(String message) {
+        errorShown = true;
         hideNavBar();
         progress.setVisibility(GONE);
         statusText.setTextColor(Color.WHITE);
-        statusText.setText(message + "\n\nSwipe the window away to close it.");
+        statusText.setText(message + "\n\nTap to view the log · swipe away to close");
         loadingView.setBackgroundColor(0xFF3A1515);
         loadingView.animate().cancel();
         loadingView.setAlpha(1f);
@@ -232,6 +239,7 @@ public final class PipView extends FrameLayout {
     }
 
     public void showLoading(boolean show) {
+        errorShown = false;
         if (show) {
             progress.setVisibility(VISIBLE);
             statusText.setTextColor(0xCCFFFFFF);
@@ -381,7 +389,7 @@ public final class PipView extends FrameLayout {
         if (velocityTracker != null) {
             velocityTracker.addMovement(raw);
         }
-        if (!pinching && (!controlEnabled || downOnHandle)) {
+        if (!pinching && (!controlEnabled || downOnHandle || errorShown)) {
             gestureDetector.onTouchEvent(raw);
         }
         raw.recycle();

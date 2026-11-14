@@ -43,6 +43,7 @@ public final class AdbLauncher {
 
     private static final String SERVER_PATH = "/data/local/tmp/scrcpy-server.jar";
     private static final String UPLOAD_PATH = "/data/local/tmp/scrcpy-server.b64";
+    private static final String SELF_TEST_PATH = "/data/local/tmp/scrcpy-selftest.log";
     private static final int SOCKET_CONNECT_TIMEOUT_MS = 5_000;
     private static final long AUTH_TIMEOUT_SECONDS = 60;
     private static final long SHELL_TIMEOUT_MS = 15_000;
@@ -145,9 +146,12 @@ public final class AdbLauncher {
 
         boolean success = false;
         Session newSession = null;
+        DiagnosticLog.i("adb", "----- New connection to " + address + " (app " + appVersion(appContext)
+                + ", Android " + android.os.Build.VERSION.RELEASE + ") -----");
         try {
             connectSocket(newSocket, address);
             String localAddress = hostAddress(newSocket.getLocalAddress());
+            DiagnosticLog.i("adb", "TCP connected from " + localAddress + "; ADB handshake…");
 
             AdbConnection connection = AdbConnection.create(newSocket, crypto);
             boolean connected;
@@ -159,13 +163,16 @@ public final class AdbLauncher {
                 throw new LaunchException(isCancelled() ? "Connection cancelled" : AUTH_CLOSED_MESSAGE, e);
             }
             if (!connected) {
+                DiagnosticLog.i("adb", "No ADB authorization within " + AUTH_TIMEOUT_SECONDS + " s");
                 throw new LaunchException("Timed out waiting for ADB authorization. Unlock the target and tap "
                         + "Allow on the \"Allow USB debugging?\" prompt within 60 s. Android 11+ "
                         + "\"Wireless debugging\" pairing ports are not supported: use port 5555 "
                         + "(adb tcpip 5555 or setprop service.adb.tcp.port 5555).");
             }
 
+            DiagnosticLog.i("adb", "ADB connected (authorized); opening shell");
             AdbStream stream = connection.open("shell:");
+            DiagnosticLog.i("adb", "Shell opened");
             newSession = new Session(connection, stream, localAddress);
             synchronized (stateLock) {
                 if (cancelled) {
@@ -177,8 +184,12 @@ public final class AdbLauncher {
             newSession.prepareShell();
             newSession.installServer(server, serverMd5);
             newSession.startServer(buildServerCommand(options, localAddress));
+            DiagnosticLog.i("adb", "Server started; waiting for it to accept connections");
             success = true;
             return newSession;
+        } catch (LaunchException e) {
+            DiagnosticLog.e("adb", "Launch failed: " + e.getMessage(), e.getCause());
+            throw e;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             throw new LaunchException("Connection cancelled", e);
@@ -186,11 +197,14 @@ public final class AdbLauncher {
             if (isCancelled()) {
                 throw new LaunchException("Connection cancelled", e);
             }
+            DiagnosticLog.e("adb", "ADB I/O failure", e);
             throw new LaunchException("ADB connection failed: " + describe(e), e);
         } catch (RuntimeException e) {
             Log.e(TAG, "Unexpected ADB failure", e);
+            DiagnosticLog.e("adb", "Unexpected ADB failure", e);
             throw new LaunchException("ADB connection failed: " + describe(e), e);
         } finally {
+            DiagnosticLog.flushShell();
             watchdog.interrupt();
             if (!success) {
                 if (newSession != null) {
@@ -202,6 +216,97 @@ public final class AdbLauncher {
                 socket = null;
                 session = null;
             }
+        }
+    }
+
+    /** Diagnostic commands run on the target as the ADB shell user (no root needed). */
+    static String buildDiagnosticsCommand() {
+        return "echo '== target =='; getprop ro.product.manufacturer; getprop ro.product.model;"
+                + " echo \"Android $(getprop ro.build.version.release) (SDK $(getprop ro.build.version.sdk))\"; id;"
+                + " echo '== server file =='; ls -l " + SERVER_PATH + " 2>&1; md5sum " + SERVER_PATH + " 2>&1;"
+                + " echo '== server self-test (list displays) =='; CLASSPATH=" + SERVER_PATH
+                + " timeout 20 app_process / com.genymobile.scrcpy.Server " + ScrcpySessionOptions.SERVER_VERSION
+                + " log_level=debug list_displays=true cleanup=false > " + SELF_TEST_PATH + " 2>&1;"
+                + " c=$?; tail -n 80 " + SELF_TEST_PATH + "; rm -f " + SELF_TEST_PATH + ";"
+                + " echo \"(exit code $c)\";"
+                + " echo '== target logcat (scrcpy, crashes, adbd) =='; logcat -d -v time -t 3000 2>&1"
+                + " | grep -iE 'scrcpy|app_process|AndroidRuntime|FATAL|adbd|F/DEBUG' | tail -n 250";
+    }
+
+    /**
+     * Opens a separate ADB connection and returns the target's diagnostics
+     * (device info, installed server, a server self-test and the relevant
+     * logcat). Blocks for up to about a minute; call from a background thread.
+     */
+    public static String collectTargetDiagnostics(Context context, HostAddress address) throws LaunchException {
+        AdbCrypto crypto = loadCrypto(context.getApplicationContext());
+        final Socket socket = new Socket();
+        Thread watchdog = new Thread(() -> {
+            try {
+                Thread.sleep(AUTH_TIMEOUT_SECONDS * 1000 + 30_000);
+                closeQuietly(socket);
+            } catch (InterruptedException ignored) {
+                // Finished in time.
+            }
+        }, "scrcpy-diagnostics-watchdog");
+        watchdog.setDaemon(true);
+        watchdog.start();
+        AdbConnection connection = null;
+        try {
+            connectSocket(socket, address);
+            connection = AdbConnection.create(socket, crypto);
+            boolean connected;
+            try {
+                connected = connection.connect(AUTH_TIMEOUT_SECONDS, TimeUnit.SECONDS, false);
+            } catch (AdbAuthenticationFailedException e) {
+                throw new LaunchException("The target rejected this device's ADB key.", e);
+            } catch (IOException e) {
+                throw new LaunchException(AUTH_CLOSED_MESSAGE, e);
+            }
+            if (!connected) {
+                throw new LaunchException("Timed out waiting for ADB authorization on the target.");
+            }
+            AdbStream stream = connection.open("shell:" + buildDiagnosticsCommand());
+            StringBuilder result = new StringBuilder();
+            while (true) {
+                byte[] data;
+                try {
+                    data = stream.read();
+                } catch (IOException e) {
+                    break; // The command finished and the target closed the stream.
+                }
+                if (data != null) {
+                    result.append(new String(data, StandardCharsets.UTF_8));
+                }
+                if (result.length() > 512 * 1024) {
+                    result.append("\n[truncated]");
+                    break;
+                }
+            }
+            return result.toString().replace("\r", "");
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new LaunchException("Cancelled", e);
+        } catch (IOException | RuntimeException e) {
+            throw new LaunchException("Could not read the target's log: " + describe(e), e);
+        } finally {
+            watchdog.interrupt();
+            if (connection != null) {
+                try {
+                    connection.close();
+                } catch (IOException | RuntimeException ignored) {
+                    // Best effort.
+                }
+            }
+            closeQuietly(socket);
+        }
+    }
+
+    private static String appVersion(Context context) {
+        try {
+            return context.getPackageManager().getPackageInfo(context.getPackageName(), 0).versionName;
+        } catch (Exception e) {
+            return "?";
         }
     }
 
@@ -430,13 +535,18 @@ public final class AdbLauncher {
                     }
                     String text = new String(data, StandardCharsets.UTF_8);
                     output.append(text);
+                    DiagnosticLog.shellOutput(text);
                     if (serverStarted) {
                         Log.i(TAG, "server: " + text.trim());
                     }
                 }
             } catch (IOException | InterruptedException | RuntimeException e) {
                 // The shell was closed: either by us or because the server exited.
+                if (!closed) {
+                    DiagnosticLog.i("adb", "Shell closed by the target (" + describe(e) + ")");
+                }
             } finally {
+                DiagnosticLog.flushShell();
                 output.close();
             }
         }
@@ -448,9 +558,12 @@ public final class AdbLauncher {
 
         private String run(String command, Pattern marker, String failure) throws IOException,
                 InterruptedException, LaunchException {
+            DiagnosticLog.i("shell", "$ " + (command.length() > 160
+                    ? command.substring(0, 60) + "… (" + command.length() + " chars)" : command));
             write(command);
             String result = output.await(marker, SHELL_TIMEOUT_MS);
             if (result == null) {
+                DiagnosticLog.flushShell();
                 if (output.isClosed()) {
                     throw new LaunchException("The target closed the ADB shell. " + failure);
                 }
@@ -473,8 +586,11 @@ public final class AdbLauncher {
                         HASH, "Could not inspect the installed server.");
                 if (expectedMd5.equalsIgnoreCase(installed)) {
                     Log.i(TAG, "scrcpy server already installed; skipping upload");
+                    DiagnosticLog.i("adb", "Server already installed (md5 " + installed + "); upload skipped");
                     return;
                 }
+                DiagnosticLog.i("adb", "Installed server md5 '" + installed + "' != bundled " + expectedMd5
+                        + "; uploading " + server.length + " bytes");
             }
 
             long started = System.currentTimeMillis();
@@ -497,11 +613,14 @@ public final class AdbLauncher {
             }
             Log.i(TAG, "Uploaded scrcpy server in " + chunk + " chunks, "
                     + (System.currentTimeMillis() - started) + " ms");
+            DiagnosticLog.i("adb", "Uploaded server in " + chunk + " chunks, "
+                    + (System.currentTimeMillis() - started) + " ms (md5 " + installed + ")");
         }
 
         void startServer(String command) throws IOException, InterruptedException {
             output.clearPending();
             serverStarted = true;
+            DiagnosticLog.i("shell", "$ exec " + command);
             // exec replaces the shell: when the server exits the ADB stream closes, and hanging
             // up the shell stops the server.
             write("exec " + command);

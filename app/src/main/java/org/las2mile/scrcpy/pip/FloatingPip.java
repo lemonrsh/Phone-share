@@ -44,6 +44,9 @@ public final class FloatingPip implements PipView.Listener {
 
         void onKey(int keycode);
 
+        /** The user tapped the error card (to see the log). */
+        void onErrorTapped();
+
         /** The user swiped the window away. */
         void onDismissed();
     }
@@ -247,6 +250,13 @@ public final class FloatingPip implements PipView.Listener {
     public void onKey(int keycode) {
         if (!removed && !dismissing) {
             callbacks.onKey(keycode);
+        }
+    }
+
+    @Override
+    public void onErrorTapped() {
+        if (!removed && !dismissing) {
+            callbacks.onErrorTapped();
         }
     }
 
