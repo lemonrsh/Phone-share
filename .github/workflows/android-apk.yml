@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: app/src/main/jniLibs
-          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-static-${{ hashFiles('tools/cloudflared/**') }}
+          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-static-x64-${{ hashFiles('tools/cloudflared/**') }}
 
       - name: Check out cloudflared
         if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
@@ -72,7 +72,7 @@ jobs:
           go-version-file: .cloudflared-src/go.mod
           cache-dependency-path: .cloudflared-src/go.sum
 
-      - name: Build cloudflared for Android (arm64-v8a, armeabi-v7a)
+      - name: Build cloudflared for Android (arm64-v8a, armeabi-v7a, x86_64)
         if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
@@ -93,10 +93,15 @@ jobs:
           }
           build arm64-v8a arm64
           build armeabi-v7a arm 7
+          # x86_64: Waydroid and emulators on PCs. ARM programs only run there through a
+          # translator, which crashes on cloudflared (SIGSEGV).
+          build x86_64 amd64
           # goprobe: a tiny Go program the app runs first to diagnose start-up problems.
           cd "$GITHUB_WORKSPACE/tools/cloudflared/probe"
           env CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$OUT/arm64-v8a/libgoprobe.so" .
           env CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o "$OUT/armeabi-v7a/libgoprobe.so" .
+          mkdir -p "$OUT/x86_64"
+          env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$OUT/x86_64/libgoprobe.so" .
           file "$OUT"/*/libgoprobe.so || true
 
       - name: Set up Gradle
