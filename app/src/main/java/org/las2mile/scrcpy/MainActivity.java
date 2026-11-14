@@ -20,6 +20,7 @@ import android.os.SystemClock;
 import android.provider.Settings;
 import android.util.Log;
 import android.view.Gravity;
+import android.view.LayoutInflater;
 import android.view.SurfaceHolder;
 import android.view.SurfaceView;
 import android.view.View;
@@ -64,6 +65,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private String currentHost;
     private ClipboardSync clipboardSync;
     private boolean localAdbBusy;
+    // Other phones mirroring this one (needs the app on both phones).
+    private IncomingSessions incomingSessions;
+    private java.util.List<IncomingSessions.Session> incoming = java.util.Collections.emptyList();
 
     // Mirroring views.
     private LinearLayout mirrorContainer;
@@ -88,6 +92,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         super.onCreate(savedInstanceState);
         sensorManager = (SensorManager) getSystemService(SENSOR_SERVICE);
         clipboardSync = new ClipboardSync(this, () -> client);
+        incomingSessions = new IncomingSessions(sessions -> {
+            incoming = sessions;
+            renderIncomingSessions();
+        });
         showSettings();
         SessionState.addListener(this);
     }
@@ -116,6 +124,39 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setupCollapsible(R.id.header_advanced, R.id.options_container, R.string.options_more_title);
         setupLocalAdbCard();
         updateSessionStatusView();
+        renderIncomingSessions();
+    }
+
+    // ---------------------------------------------------------------- incoming sessions
+
+    private void renderIncomingSessions() {
+        LinearLayout container = mirroring ? null : (LinearLayout) findViewById(R.id.incoming_container);
+        if (container == null) {
+            return;
+        }
+        container.removeAllViews();
+        container.setVisibility(incoming.isEmpty() ? View.GONE : View.VISIBLE);
+        LayoutInflater inflater = LayoutInflater.from(this);
+        java.text.DateFormat timeFormat = android.text.format.DateFormat.getTimeFormat(this);
+        for (final IncomingSessions.Session session : incoming) {
+            View item = inflater.inflate(R.layout.item_incoming_session, container, false);
+            final String name = session.clientName.isEmpty() ? getString(R.string.incoming_unknown_name) : session.clientName;
+            String ip = session.clientIp.isEmpty() ? "?" : session.clientIp;
+            String since = session.startMillis > 0 ? timeFormat.format(new java.util.Date(session.startMillis)) : "?";
+            ((TextView) item.findViewById(R.id.incoming_title)).setText(getString(R.string.incoming_title, name));
+            ((TextView) item.findViewById(R.id.incoming_detail)).setText(getString(R.string.incoming_detail, ip, since));
+            final Button button = item.findViewById(R.id.incoming_disconnect);
+            button.setOnClickListener(view -> {
+                button.setEnabled(false);
+                button.setText(R.string.incoming_disconnecting);
+                incomingSessions.disconnect(session, () -> {
+                    if (!isFinishing()) {
+                        Toast.makeText(this, getString(R.string.toast_incoming_disconnected, name), Toast.LENGTH_SHORT).show();
+                    }
+                });
+            });
+            container.addView(item);
+        }
     }
 
     private void setupCollapsible(int headerId, int bodyId, int titleRes) {
@@ -989,6 +1030,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     protected void onResume() {
         super.onResume();
         resumed = true;
+        incomingSessions.start();
         if (mirroring) {
             hideSystemUi();
             registerProximity();
@@ -998,6 +1040,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @Override
     protected void onPause() {
         resumed = false;
+        incomingSessions.stop();
         unregisterProximity();
         super.onPause();
     }

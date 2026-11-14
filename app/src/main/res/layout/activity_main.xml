@@ -50,6 +50,14 @@
             android:textSize="13sp"
             android:textStyle="bold" />
 
+        <!-- Phones that are mirroring THIS phone, each with a Disconnect button. -->
+        <LinearLayout
+            android:id="@+id/incoming_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone" />
+
         <Button
             android:id="@+id/button_start"
             android:layout_width="match_parent"

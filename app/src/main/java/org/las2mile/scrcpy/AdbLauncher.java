@@ -342,6 +342,37 @@ public final class AdbLauncher {
      * Android's mksh does not accept {@code exec VAR=value cmd} (it looks for a program
      * called "VAR=value"), so CLASSPATH is exported first.
      */
+    /** This phone's name for the command line: only [A-Za-z0-9.-], spaces become '_'. */
+    static String clientName() {
+        String manufacturer;
+        String model;
+        try {
+            manufacturer = android.os.Build.MANUFACTURER;
+            model = android.os.Build.MODEL;
+        } catch (Throwable t) { // plain JVM unit tests
+            manufacturer = null;
+            model = null;
+        }
+        String name;
+        if (model == null || model.isEmpty()) {
+            name = "Android";
+        } else if (manufacturer != null && !manufacturer.isEmpty()
+                && !model.toLowerCase(java.util.Locale.ROOT).startsWith(manufacturer.toLowerCase(java.util.Locale.ROOT))) {
+            name = manufacturer + " " + model;
+        } else {
+            name = model;
+        }
+        return sanitizeClientName(name);
+    }
+
+    static String sanitizeClientName(String name) {
+        String cleaned = name.trim().replaceAll("[^A-Za-z0-9.\\-]+", "_").replaceAll("^_+|_+$", "");
+        if (cleaned.length() > 40) {
+            cleaned = cleaned.substring(0, 40);
+        }
+        return cleaned.isEmpty() ? "Android" : cleaned;
+    }
+
     static String buildServerCommand(ScrcpySessionOptions options, String localAddress) {
         StringBuilder command = new StringBuilder();
         command.append("export CLASSPATH=").append(SERVER_PATH).append("; exec");
@@ -349,6 +380,8 @@ public final class AdbLauncher {
         command.append(" log_level=").append(oneOf(options.logLevel, "info", "verbose", "debug", "info", "warn", "error"));
         command.append(" tcp_port=").append(ScrcpySessionOptions.SERVER_PORT);
         command.append(" tcp_client=").append(localAddress);
+        // Shown by the app on the mirrored phone ("<name> is connected to this phone").
+        command.append(" client_name=").append(clientName());
         command.append(" tunnel_forward=false");
         command.append(" video=true audio=").append(options.audioEnabled);
         command.append(" control=").append(!options.noControl);
@@ -383,7 +416,7 @@ public final class AdbLauncher {
     private static final java.util.Set<String> RESERVED_ARGS = new java.util.HashSet<>(java.util.Arrays.asList(
             "scid", "log_level", "video", "audio", "video_codec", "audio_codec", "max_size", "video_bit_rate",
             "max_fps", "tunnel_forward", "control", "show_touches", "stay_awake", "power_off_on_close",
-            "clipboard_autosync", "power_on", "tcp_port", "tcp_client", "send_device_meta", "send_frame_meta",
+            "clipboard_autosync", "power_on", "tcp_port", "tcp_client", "client_name", "send_device_meta", "send_frame_meta",
             "send_dummy_byte", "send_stream_meta", "raw_stream", "list_encoders", "list_displays",
             "list_cameras", "list_camera_sizes", "list_apps"));
 

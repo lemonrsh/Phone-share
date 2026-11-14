@@ -52,6 +52,11 @@
     <string name="label_x">x</string>
     <string name="action_start">Connect</string>
     <string name="action_disconnect">Disconnect</string>
+    <string name="incoming_title">%1$s is connected to this phone</string>
+    <string name="incoming_detail">IP %1$s · since %2$s</string>
+    <string name="incoming_unknown_name">Another device</string>
+    <string name="incoming_disconnecting">Disconnecting…</string>
+    <string name="toast_incoming_disconnected">%1$s was disconnected</string>
     <string name="switch_audio_dup">Play audio on both devices</string>
     <string name="audio_dup_note">scrcpy --audio-dup: the sound keeps playing on the other device too, instead of being muted there. Needs Android 13 or newer on the other device; turns remote audio on.</string>
     <string name="switch_keep_active">Keep the remote screen awake</string>

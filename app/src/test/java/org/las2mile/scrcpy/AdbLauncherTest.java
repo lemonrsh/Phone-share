@@ -28,6 +28,15 @@ public class AdbLauncherTest {
     }
 
     @Test
+    public void sendsClientNameForTheMirroredPhone() {
+        String command = AdbLauncher.buildServerCommand(new ScrcpySessionOptions(), "10.0.0.2");
+        assertTrue(command.matches(".* client_name=[A-Za-z0-9._\\-]+ .*"));
+        assertEquals("Infinix_X6886", AdbLauncher.sanitizeClientName("Infinix X6886"));
+        assertEquals("Galaxy_S24_Ultra", AdbLauncher.sanitizeClientName("  Galaxy S24 (Ultra) "));
+        assertEquals("Android", AdbLauncher.sanitizeClientName("$;`|"));
+    }
+
+    @Test
     public void md5MatchesKnownValue() {
         assertEquals("900150983cd24fb0d6963f7d28e17f72", AdbLauncher.md5Hex("abc".getBytes()));
     }
