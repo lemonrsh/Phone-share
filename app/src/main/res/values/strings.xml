@@ -60,6 +60,14 @@
     <string name="local_adb_no_root_message">%1$s\n\nAndroid only lets an app switch ADB to port 5555 with root. Without root, do it once from a computer (it stays on until the phone restarts):\n\n1. Settings › About phone › tap Build number 7 times.\n2. Developer options › turn on USB debugging.\n3. Connect the phone by USB and run:\n    adb tcpip 5555\n\nThen tap Check here.</string>
     <string name="local_adb_open_dev_options">Developer options</string>
     <string name="local_adb_copy_command">Copy command</string>
+    <string name="root_setup_title">⚡ Set up everything with root</string>
+    <string name="root_setup_note">Rooted phones only. One tap turns on developer options, ADB and ADB over Wi-Fi on port 5555 (kept after reboot), allows the floating window and notifications, removes battery restrictions and stops Android from forgetting allowed phones after 7 days. The other phone still needs your Allow the first time.</string>
+    <string name="root_setup_button">Set up everything (needs root)</string>
+    <string name="root_setup_working">Working… accept the root prompt if one appears.</string>
+    <string name="root_setup_no_root">❌ Root is not available: %1$s\n\nThis needs a rooted phone (Magisk, KernelSU…). Without root, use the steps shown by Turn on 5555.</string>
+    <string name="root_setup_done">Setup finished: %1$d of %2$d steps done.</string>
+    <string name="root_setup_adb_on">✅ ADB over Wi-Fi answers on port 5555.</string>
+    <string name="root_setup_adb_off">⚠️ Port 5555 is not answering yet. Tap Check in a moment.</string>
     <string name="local_adb_failed">Could not change ADB: %1$s</string>
     <string name="codec_unsupported">This phone has no %1$s decoder. Choose another codec under %2$s.</string>
     <string name="section_video">Video quality</string>

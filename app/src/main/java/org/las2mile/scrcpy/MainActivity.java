@@ -570,6 +570,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         findViewById(R.id.button_local_adb_on).setOnClickListener(view -> changeLocalAdb(true));
         findViewById(R.id.button_local_adb_off).setOnClickListener(view -> changeLocalAdb(false));
         findViewById(R.id.button_local_adb_check).setOnClickListener(view -> refreshLocalAdb());
+        findViewById(R.id.button_root_setup).setOnClickListener(view -> runRootSetup());
         refreshLocalAdb();
     }
 
@@ -644,12 +645,72 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }, "local-adb-change").start();
     }
 
+    /** "Set up everything with root": ADB 5555 plus every permission the app can use, one root prompt. */
+    private void runRootSetup() {
+        if (localAdbBusy) {
+            return;
+        }
+        localAdbBusy = true;
+        setLocalAdbButtonsEnabled(false);
+        TextView result = findViewById(R.id.text_root_setup_result);
+        if (result != null) {
+            result.setVisibility(View.VISIBLE);
+            result.setText(R.string.root_setup_working);
+        }
+        final String packageName = getPackageName();
+        new Thread(() -> {
+            final LocalAdb.SetupResult setup = LocalAdb.rootSetup(packageName, Build.VERSION.SDK_INT);
+            StringBuilder log = new StringBuilder("Root setup: ");
+            for (int i = 0; i < setup.steps.size(); ++i) {
+                log.append(setup.steps.get(i).label).append(setup.ok[i] ? " ok; " : " FAILED; ");
+            }
+            DiagnosticLog.i("local-adb", setup.result.noRoot ? "Root setup: " + setup.result.output : log.toString());
+            runOnUiThread(() -> {
+                localAdbBusy = false;
+                if (isFinishing() || isDestroyed()) {
+                    return;
+                }
+                setLocalAdbButtonsEnabled(true);
+                showRootSetupResult(setup);
+                refreshLocalAdb();
+            });
+        }, "root-setup").start();
+    }
+
+    private void showRootSetupResult(LocalAdb.SetupResult setup) {
+        TextView view = findViewById(R.id.text_root_setup_result);
+        if (view == null) {
+            return;
+        }
+        view.setVisibility(View.VISIBLE);
+        if (setup.result.noRoot) {
+            view.setText(getString(R.string.root_setup_no_root, setup.result.output));
+            return;
+        }
+        int done = 0;
+        StringBuilder text = new StringBuilder();
+        for (int i = 0; i < setup.steps.size(); ++i) {
+            if (setup.ok[i]) {
+                done++;
+            }
+            text.append(setup.ok[i] ? "✅ " : "❌ ").append(setup.steps.get(i).label).append('\n');
+        }
+        text.append('\n').append(getString(setup.adbListening ? R.string.root_setup_adb_on : R.string.root_setup_adb_off));
+        view.setText(text);
+        Toast.makeText(this, getString(R.string.root_setup_done, done, setup.steps.size()), Toast.LENGTH_LONG).show();
+    }
+
     private void setLocalAdbButtonsEnabled(boolean enabled) {
         View on = findViewById(R.id.button_local_adb_on);
         View off = findViewById(R.id.button_local_adb_off);
+        View rootSetup = findViewById(R.id.button_root_setup);
         if (on != null) {
             on.setEnabled(enabled);
             on.setAlpha(enabled ? 1f : 0.5f);
+        }
+        if (rootSetup != null) {
+            rootSetup.setEnabled(enabled);
+            rootSetup.setAlpha(enabled ? 1f : 0.5f);
         }
         if (off != null) {
             off.setEnabled(enabled);
