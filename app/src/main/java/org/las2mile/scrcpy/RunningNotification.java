@@ -10,7 +10,7 @@ import android.os.Build;
 import android.util.Log;
 
 /**
- * "scrcpy is running" notification with a Stop button for sessions shown full screen by
+ * "Phone Share is running" notification with a Stop button for sessions shown full screen by
  * {@link MainActivity}. (The floating window has its own foreground-service notification with
  * the same title and a Stop button.) Stop is delivered to {@link StopReceiver}.
  */
@@ -66,12 +66,11 @@ final class RunningNotification {
     private static Notification build(Context context, NotificationManager manager, String text) {
         Notification.Builder builder;
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            if (manager.getNotificationChannel(CHANNEL_ID) == null) {
-                NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
-                        context.getString(R.string.running_channel), NotificationManager.IMPORTANCE_LOW);
-                channel.setShowBadge(false);
-                manager.createNotificationChannel(channel);
-            }
+            // Always (re)registered so that a renamed channel ("Phone Share is running") updates.
+            NotificationChannel channel = new NotificationChannel(CHANNEL_ID,
+                    context.getString(R.string.running_channel), NotificationManager.IMPORTANCE_LOW);
+            channel.setShowBadge(false);
+            manager.createNotificationChannel(channel);
             builder = new Notification.Builder(context, CHANNEL_ID);
         } else {
             builder = new Notification.Builder(context).setPriority(Notification.PRIORITY_LOW);

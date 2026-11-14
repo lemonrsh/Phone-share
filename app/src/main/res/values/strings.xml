@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">scrcpy Android</string>
+    <string name="app_name">Phone Share</string>
     <string name="app_tagline">Mirror and control an Android device over Wi-Fi</string>
     <string name="section_connection">Connection</string>
     <string name="section_display">Appearance and window</string>
@@ -30,7 +30,7 @@
     <string name="share_copy">Copy code</string>
     <string name="share_send">Send…</string>
     <string name="share_copied">Share code copied</string>
-    <string name="share_send_text">Connect to my phone with scrcpy Android. Paste this code into the address box and tap Connect: %1$s</string>
+    <string name="share_send_text">Connect to my phone with Phone Share. Paste this code into the address box and tap Connect: %1$s</string>
     <string name="share_checking_adb">Checking ADB on this phone…</string>
     <string name="share_starting_tunnel">Starting the Cloudflare tunnel…</string>
     <string name="share_waiting">Got an address, connecting it to Cloudflare…</string>
@@ -91,11 +91,11 @@
     <string name="status_starting">Starting the scrcpy server…</string>
     <string name="press_back_again">Press back again to stop mirroring</string>
     <string name="notification_channel">Floating mirror</string>
-    <string name="notification_title">scrcpy is running</string>
+    <string name="notification_title">Phone Share is running</string>
     <string name="notification_text">Drag the window to the bottom or fling it away to close it.</string>
     <string name="notification_stop">Stop</string>
-    <string name="running_channel">scrcpy is running</string>
-    <string name="running_title">scrcpy is running</string>
+    <string name="running_channel">Phone Share is running</string>
+    <string name="running_title">Phone Share is running</string>
     <string name="error_tunnel_needs_cloudflared">This is the standard version, which has no Cloudflare support. Install the cloudflared version to connect with a share code, or enter the other phone\'s IP address.</string>
 
     <!-- Start-up question when ADB over Wi-Fi is off on this phone. -->
@@ -153,9 +153,25 @@
         <item>1280x720</item>
         <item>1200x540</item>
         <item>960x720</item>
+        <item>854x480</item>
         <item>800x448</item>
         <item>640x360</item>
     </string-array>
+
+    <!-- Shown in the spinner; same order as options_resolution_values. -->
+    <string-array name="options_resolution_labels">
+        <item>1920x1080 (1080p)</item>
+        <item>1600x720</item>
+        <item>1280x720 (720p)</item>
+        <item>1200x540</item>
+        <item>960x720</item>
+        <item>854x480 (480p) · recommended</item>
+        <item>800x448</item>
+        <item>640x360 (360p)</item>
+    </string-array>
+    <string name="resolution_note">⭐ 480p is recommended: smoothest picture with the least delay and data, especially over mobile data or a share code. Pick a higher size only on fast Wi-Fi.</string>
+    <string name="action_clear">Clear</string>
+    <string name="address_cleared">Address cleared</string>
 
     <string-array name="options_bitrate_keys">
         <item>6 Mbps</item>

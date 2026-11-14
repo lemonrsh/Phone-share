@@ -45,7 +45,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         SurfaceHolder.Callback, SessionState.Listener {
     private static final String TAG = "MainActivity";
     private static final String PREFERENCE_KEY = "default";
-    private static final String PREFERENCE_SPINNER_RESOLUTION = "spinner_resolution";
+    /** v2: 854x480 (480p, recommended) was inserted at index 5 (see migrateMovedOptions). */
+    private static final String PREFERENCE_SPINNER_RESOLUTION = "spinner_resolution_v2";
+    private static final String PREFERENCE_SPINNER_RESOLUTION_OLD = "spinner_resolution";
+    private static final int RESOLUTION_480P = 5;
     private static final String PREFERENCE_SPINNER_BITRATE = "spinner_bitrate";
     private static final String PREFERENCE_SPINNER_FPS = "spinner_fps";
     private static final String PREFERENCE_DARK_MODE = "dark_mode";
@@ -111,7 +114,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
     }
 
-    /** Stop in the "scrcpy is running" notification, for a session shown by this activity. */
+    /** Stop in the "Phone Share is running" notification, for a session shown by this activity. */
     private final Runnable stopFromNotification = () -> {
         if (launcher != null) {
             launcher.cancel();
@@ -176,7 +179,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
     }
 
-    // ---------------------------------------------------------------- "scrcpy is running" notification
+    // ---------------------------------------------------------------- "Phone Share is running" notification
 
     /** Shows the notification while this activity runs a session, removes it otherwise. */
     private void updateRunningNotification() {
@@ -219,6 +222,13 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         final Button startButton = findViewById(R.id.button_start);
         loadSavedPreferences();
         startButton.setOnClickListener(view -> onStartClicked(startButton));
+        findViewById(R.id.button_clear_host).setOnClickListener(view -> {
+            EditText host = findViewById(R.id.editText_server_host);
+            host.setText("");
+            host.requestFocus();
+            getPreferences().edit().putString("Server Address", "").apply();
+            Toast.makeText(this, R.string.address_cleared, Toast.LENGTH_SHORT).show();
+        });
         findViewById(R.id.button_copy_adb_key).setOnClickListener(view -> showAdbKeyDialog());
         findViewById(R.id.button_connection_log).setOnClickListener(view -> openLog(LogActivity.SECTION_CONNECTION_LOG));
         findViewById(R.id.button_app_log).setOnClickListener(view -> openLog(LogActivity.SECTION_APP_LOG));
@@ -753,7 +763,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             }
         });
 
-        setSpinner(R.array.options_resolution_values, R.id.spinner_video_resolution, PREFERENCE_SPINNER_RESOLUTION, 2);
+        // Labels and values have the same order; new installs start at 480p (recommended).
+        setSpinner(R.array.options_resolution_labels, R.id.spinner_video_resolution, PREFERENCE_SPINNER_RESOLUTION,
+                RESOLUTION_480P);
         setSpinner(R.array.options_bitrate_keys, R.id.spinner_video_bitrate, PREFERENCE_SPINNER_BITRATE, 2);
         setSpinner(R.array.options_fps_values, R.id.spinner_video_fps, PREFERENCE_SPINNER_FPS, 1);
 
@@ -806,6 +818,15 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
                 editor.remove(entry[0]);
                 changed = true;
             }
+        }
+        // Keep the chosen video size now that 480p sits at index 5 (later entries moved down one).
+        if (preferences.contains(PREFERENCE_SPINNER_RESOLUTION_OLD)) {
+            if (!preferences.contains(PREFERENCE_SPINNER_RESOLUTION)) {
+                int old = preferences.getInt(PREFERENCE_SPINNER_RESOLUTION_OLD, 2);
+                editor.putInt(PREFERENCE_SPINNER_RESOLUTION, old >= RESOLUTION_480P ? old + 1 : old);
+            }
+            editor.remove(PREFERENCE_SPINNER_RESOLUTION_OLD);
+            changed = true;
         }
         if (changed) {
             editor.apply();
@@ -877,7 +898,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         String[] resolutions = getResources().getStringArray(R.array.options_resolution_values);
         int[] bitrates = getResources().getIntArray(R.array.options_bitrate_values);
         String[] fpsValues = getResources().getStringArray(R.array.options_fps_values);
-        String resolution = resolutions[selectedIndex(R.id.spinner_video_resolution, resolutions.length, 2)];
+        String resolution = resolutions[selectedIndex(R.id.spinner_video_resolution, resolutions.length, RESOLUTION_480P)];
         int maxSize = 1280;
         try {
             String[] dimensions = resolution.split("x");

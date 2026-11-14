@@ -5,7 +5,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.util.Log;
 
-/** Stop button of the "scrcpy is running" notification: ends whatever session is running. */
+/** Stop button of the "Phone Share is running" notification: ends whatever session is running. */
 public class StopReceiver extends BroadcastReceiver {
     static final String ACTION_STOP = "org.las2mile.scrcpy.action.STOP_SESSION";
 

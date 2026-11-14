@@ -1,6 +1,8 @@
-# scrcpy Android
+# Phone Share
 
-An Android-to-Android viewer for a remote Android device connected over Wi-Fi. The bundled server source is pinned to the upstream [Genymobile/scrcpy `v5.0.1` tag](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1). The app uses a small TCP transport adapter so it can connect directly from an Android device without a desktop `adb forward` process.
+![Phone Share icon](docs/icon-512.png)
+
+Phone Share (formerly "scrcpy Android") is an Android-to-Android viewer for a remote Android device connected over Wi-Fi. The bundled server source is pinned to the upstream [Genymobile/scrcpy `v5.0.1` tag](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1). The app uses a small TCP transport adapter so it can connect directly from an Android device without a desktop `adb forward` process.
 
 ## Editions
 
@@ -14,9 +16,12 @@ Every release is built from the same source in two editions (Gradle product flav
 ## Features
 
 - **Start-up ADB question**: when ADB over Wi-Fi (port 5555) is off on this phone, the app asks once per launch: **Enable ADB** (one tap with root, otherwise it shows how to turn it on) or **Nah, I just want to control another phone**, which just opens the app. Tick **Don't ask again** to stop the question.
-- **"scrcpy is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
+- **"Phone Share is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
 
 - Full-screen mirroring or a YouTube-style floating player (see below).
+- Green interface (light and dark), so the white status-bar icons are always readable.
+- **Clear** button next to the address box empties the IP address or share code.
+- Video size **480p (854x480) is recommended** and is the default for new installs (smoothest, least delay and data); a note under the size picker says so. Saved choices are kept.
 - Light and dark settings screens.
 - Selectable maximum video size, bitrate and frame rate.
 - All scrcpy options in one **green options box**: the original video size/bitrate/frame rate, audio, no-control, wake/screen-power, stay-awake and show-touches settings, plus collapsible groups for every other scrcpy v5.0.1 server option that makes sense on a phone:

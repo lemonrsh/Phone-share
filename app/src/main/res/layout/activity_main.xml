@@ -21,7 +21,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:text="@string/app_name"
-            android:textColor="?attr/colorTextPrimary"
+            android:textColor="?attr/colorOnPage"
             android:textSize="28sp"
             android:textStyle="bold" />
 
@@ -30,7 +30,7 @@
             android:layout_height="wrap_content"
             android:layout_marginTop="4dp"
             android:text="@string/app_tagline"
-            android:textColor="?attr/colorTextSecondary"
+            android:textColor="?attr/colorOnPageSecondary"
             android:textSize="14sp" />
 
         <TextView
@@ -95,17 +95,40 @@
                 android:textColor="?attr/colorTextPrimary"
                 android:textSize="14sp" />
 
-            <EditText
-                android:id="@+id/editText_server_host"
+            <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:hint="@string/hint_server_ip"
-                android:inputType="text"
-                android:maxLength="120"
-                android:singleLine="true"
-                android:minHeight="48dp"
-                android:importantForAutofill="no"
-                tools:ignore="LabelFor" />
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <EditText
+                    android:id="@+id/editText_server_host"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:hint="@string/hint_server_ip"
+                    android:inputType="text"
+                    android:maxLength="120"
+                    android:singleLine="true"
+                    android:minHeight="48dp"
+                    android:importantForAutofill="no"
+                    tools:ignore="LabelFor" />
+
+                <!-- Empties the address / share code box. -->
+                <Button
+                    android:id="@+id/button_clear_host"
+                    style="?android:attr/borderlessButtonStyle"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="4dp"
+                    android:minWidth="64dp"
+                    android:minHeight="40dp"
+                    android:text="@string/action_clear"
+                    android:textAllCaps="false"
+                    android:textColor="?attr/colorAccentScrcpy"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+            </LinearLayout>
 
             <Button
                 android:id="@+id/button_copy_adb_key"
@@ -436,8 +459,16 @@
                 android:id="@+id/spinner_video_resolution"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:entries="@array/options_resolution_values"
+                android:entries="@array/options_resolution_labels"
                 android:minHeight="48dp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/resolution_note"
+                android:textColor="?attr/colorTextSecondary"
+                android:textSize="12sp" />
 
             <TextView
                 android:layout_width="match_parent"

@@ -1,18 +1,27 @@
 <resources>
+    <!-- Phone Share: green everywhere. The page itself is green so the white status-bar and
+         navigation-bar icons stay readable (targetSdk 35+ draws the app behind the system bars). -->
     <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#4F46E5</item>
+        <item name="android:colorAccent">#16A34A</item>
+        <item name="android:colorPrimary">#15803D</item>
+        <item name="android:colorPrimaryDark">#15803D</item>
+        <item name="android:statusBarColor">#15803D</item>
+        <item name="android:navigationBarColor">#15803D</item>
+        <item name="android:windowBackground">@color/page_green</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="colorPageBackground">#F3F5FA</item>
-        <item name="colorCardBackground">#FFFFFF</item>
-        <item name="colorTextPrimary">#172033</item>
-        <item name="colorTextSecondary">#697386</item>
-        <item name="colorCardOutline">#E1E6EF</item>
-        <item name="colorAccentScrcpy">#4F46E5</item>
-        <item name="colorOptionsBackground">#ECFDF3</item>
+        <item name="colorPageBackground">#15803D</item>
+        <item name="colorOnPage">#FFFFFF</item>
+        <item name="colorOnPageSecondary">#D1FAE5</item>
+        <item name="colorCardBackground">#F0FDF4</item>
+        <item name="colorTextPrimary">#052E16</item>
+        <item name="colorTextSecondary">#3F6B4F</item>
+        <item name="colorCardOutline">#BBF7D0</item>
+        <item name="colorAccentScrcpy">#14532D</item>
+        <item name="colorOptionsBackground">#DCFCE7</item>
         <item name="colorOptionsOutline">#22C55E</item>
         <item name="colorOptionsAccent">#15803D</item>
-        <item name="colorStatusBackground">#FFFFFF</item>
+        <item name="colorStatusBackground">#F0FDF4</item>
         <item name="colorAdvancedBackground">#EFF6FF</item>
         <item name="colorAdvancedOutline">#3B82F6</item>
         <item name="colorAdvancedAccent">#1D4ED8</item>
@@ -20,18 +29,25 @@
 
     <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
         <item name="android:fontFamily">sans</item>
-        <item name="android:colorAccent">#A5B4FC</item>
+        <item name="android:colorAccent">#4ADE80</item>
+        <item name="android:colorPrimary">#052E16</item>
+        <item name="android:colorPrimaryDark">#052E16</item>
+        <item name="android:statusBarColor">#052E16</item>
+        <item name="android:navigationBarColor">#052E16</item>
+        <item name="android:windowBackground">@color/page_green_dark</item>
         <item name="android:windowActionModeOverlay">true</item>
-        <item name="colorPageBackground">#10131B</item>
-        <item name="colorCardBackground">#191E2A</item>
-        <item name="colorTextPrimary">#F3F5FA</item>
-        <item name="colorTextSecondary">#A8B0C0</item>
-        <item name="colorCardOutline">#30394A</item>
-        <item name="colorAccentScrcpy">#6366F1</item>
-        <item name="colorOptionsBackground">#0F2A1D</item>
+        <item name="colorPageBackground">#052E16</item>
+        <item name="colorOnPage">#ECFDF5</item>
+        <item name="colorOnPageSecondary">#A7D7B8</item>
+        <item name="colorCardBackground">#0F3D22</item>
+        <item name="colorTextPrimary">#ECFDF5</item>
+        <item name="colorTextSecondary">#A7D7B8</item>
+        <item name="colorCardOutline">#1F5C36</item>
+        <item name="colorAccentScrcpy">#16A34A</item>
+        <item name="colorOptionsBackground">#0B3B22</item>
         <item name="colorOptionsOutline">#22C55E</item>
         <item name="colorOptionsAccent">#4ADE80</item>
-        <item name="colorStatusBackground">#191E2A</item>
+        <item name="colorStatusBackground">#0F3D22</item>
         <item name="colorAdvancedBackground">#0F1E36</item>
         <item name="colorAdvancedOutline">#3B82F6</item>
         <item name="colorAdvancedAccent">#93C5FD</item>
