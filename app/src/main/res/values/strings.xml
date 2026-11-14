@@ -23,6 +23,25 @@
     <string name="notification_connected">Connected to %1$s</string>
     <string name="notification_connecting">Connecting to %1$s…</string>
     <string name="notification_disconnected">Disconnected</string>
+    <string name="section_cloud_share">Share this phone over the internet (test)</string>
+    <string name="cloud_share_note">Lets a phone anywhere connect to this one through Cloudflare: no account, same Wi-Fi not needed. Needs ADB over Wi-Fi (port 5555) on this phone. Tap Start, send the code to the other phone, paste it into its address box and tap Connect, then tap Allow on this phone. A new code every time.</string>
+    <string name="share_start">Start sharing</string>
+    <string name="share_stop">Stop sharing</string>
+    <string name="share_copy">Copy code</string>
+    <string name="share_send">Send…</string>
+    <string name="share_copied">Share code copied</string>
+    <string name="share_send_text">Connect to my phone with scrcpy Android. Paste this code into the address box and tap Connect: %1$s</string>
+    <string name="share_checking_adb">Checking ADB on this phone…</string>
+    <string name="share_starting_tunnel">Starting the Cloudflare tunnel…</string>
+    <string name="share_waiting">Got an address, connecting it to Cloudflare…</string>
+    <string name="share_online">● Sharing. Give this code to the other phone:</string>
+    <string name="share_adb_off">ADB over Wi-Fi (port 5555) is off on this phone, so it cannot be mirrored. Turn it on first: connect this phone to a computer and run \"adb tcpip 5555\" (it stays on until a reboot), or use the ADB card below if this phone is rooted. Then tap Start sharing again.</string>
+    <string name="share_not_bundled">This build does not include cloudflared for this phone\'s processor.</string>
+    <string name="share_failed">Could not start sharing: %1$s</string>
+    <string name="share_channel">Sharing this phone</string>
+    <string name="share_notification_title">Sharing this phone over the internet</string>
+    <string name="share_notification_code">Code: %1$s</string>
+    <string name="incoming_via_cloudflare">Cloudflare tunnel</string>
     <string name="section_local_adb">ADB on this device (port 5555)</string>
     <string name="local_adb_note">Turn on ADB over Wi-Fi on this phone so another phone or a computer can mirror and control it at this phone\'s IP address, port 5555.</string>
     <string name="local_adb_checking">Checking…</string>
@@ -45,7 +64,6 @@
     <string name="codec_unsupported">This phone has no %1$s decoder. Choose another codec under %2$s.</string>
     <string name="section_video">Video quality</string>
     <string name="label_server_ip">Target device IP address (optionally :port, default 5555)</string>
-    <string name="hint_server_ip">For example: 192.168.1.42</string>
     <string name="label_video_resolution">Maximum video size</string>
     <string name="label_video_bitrate">Video bitrate</string>
     <string name="label_video_fps">Maximum frame rate</string>
@@ -73,9 +91,19 @@
     <string name="status_starting">Starting the scrcpy server…</string>
     <string name="press_back_again">Press back again to stop mirroring</string>
     <string name="notification_channel">Floating mirror</string>
-    <string name="notification_title">Mirroring in a floating window</string>
+    <string name="notification_title">scrcpy is running</string>
     <string name="notification_text">Drag the window to the bottom or fling it away to close it.</string>
     <string name="notification_stop">Stop</string>
+    <string name="running_channel">scrcpy is running</string>
+    <string name="running_title">scrcpy is running</string>
+    <string name="error_tunnel_needs_cloudflared">This is the standard version, which has no Cloudflare support. Install the cloudflared version to connect with a share code, or enter the other phone\'s IP address.</string>
+
+    <!-- Start-up question when ADB over Wi-Fi is off on this phone. -->
+    <string name="adb_prompt_title">Turn on ADB on this phone?</string>
+    <string name="adb_prompt_message">ADB over Wi-Fi (port 5555) is off on this phone.\n\nTurn it on if you want another phone to mirror and control this one.\n\nIf you only want to use this phone to control another phone, you don\'t need it.</string>
+    <string name="adb_prompt_enable">Enable ADB</string>
+    <string name="adb_prompt_skip">Nah, I just want to control another phone</string>
+    <string name="adb_prompt_dont_ask">Don\'t ask again</string>
     <string name="button_copy_adb_key">Connection keeps failing? Authorize with root…</string>
     <string name="adb_key_title">Authorize this phone on a rooted target</string>
     <string name="adb_key_message">The target must accept this phone\'s ADB key. Normally it asks with an \"Allow USB debugging?\" prompt. If that prompt never appears or the target hangs up, run this command on the rooted target (for example in Termux), then tap Connect again:\n\n%1$s</string>

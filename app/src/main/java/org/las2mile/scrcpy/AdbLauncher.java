@@ -182,7 +182,7 @@ public final class AdbLauncher {
             }
 
             newSession.prepareShell();
-            newSession.installServer(server, serverMd5);
+            newSession.installServer(server, serverMd5, appContext.getPackageName());
             newSession.startServer(buildServerCommand(options, localAddress));
             DiagnosticLog.i("adb", "Server started; waiting for it to accept connections");
             success = true;
@@ -217,6 +217,16 @@ public final class AdbLauncher {
                 session = null;
             }
         }
+    }
+
+    /**
+     * Copies assets/scrcpy-server.jar out of this app's APK when the same app is installed on the
+     * target (APKs are world-readable; Android ships an unzip tool), then prints the md5.
+     */
+    static String buildLocalCopyCommand(String packageName) {
+        return "p=$(timeout 10 pm path " + packageName + " 2>/dev/null | grep -m 1 base.apk | cut -d: -f2);"
+                + " if [ -n \"$p\" ]; then unzip -p \"$p\" assets/scrcpy-server.jar > " + SERVER_PATH
+                + " 2>/dev/null; fi; h=$(md5sum " + SERVER_PATH + " 2>/dev/null); echo SCRCPY_HASH_${h%% *}_END";
     }
 
     /** Diagnostic commands run on the target as the ADB shell user (no root needed). */
@@ -317,6 +327,18 @@ public final class AdbLauncher {
     }
 
     private static void connectSocket(Socket socket, HostAddress address) throws LaunchException {
+        if (address.isTunnel()) {
+            try {
+                DiagnosticLog.i("adb", "Opening the Cloudflare tunnel to " + address.host + " (adb)");
+                CloudTunnel.connect(socket, address.host, CloudTunnel.TARGET_ADB, SOCKET_CONNECT_TIMEOUT_MS);
+                socket.setTcpNoDelay(true);
+                return;
+            } catch (CloudTunnel.TunnelException e) {
+                throw new LaunchException(e.getMessage(), e);
+            } catch (IOException | RuntimeException e) {
+                throw new LaunchException("Could not reach the share address " + address.host + ": " + describe(e), e);
+            }
+        }
         try {
             socket.connect(new InetSocketAddress(address.host, address.port), SOCKET_CONNECT_TIMEOUT_MS);
             socket.setTcpNoDelay(true);
@@ -648,8 +670,8 @@ public final class AdbLauncher {
                     READY, "Could not open a shell.");
         }
 
-        void installServer(byte[] server, String expectedMd5) throws IOException, InterruptedException,
-                LaunchException {
+        void installServer(byte[] server, String expectedMd5, String packageName) throws IOException,
+                InterruptedException, LaunchException {
             if (expectedMd5 != null) {
                 String installed = run("h=$(md5sum " + SERVER_PATH + " 2>/dev/null); echo SCRCPY_HASH_${h%% *}_END",
                         HASH, "Could not inspect the installed server.");
@@ -658,8 +680,19 @@ public final class AdbLauncher {
                     DiagnosticLog.i("adb", "Server already installed (md5 " + installed + "); upload skipped");
                     return;
                 }
-                DiagnosticLog.i("adb", "Installed server md5 '" + installed + "' != bundled " + expectedMd5
-                        + "; uploading " + server.length + " bytes");
+                DiagnosticLog.i("adb", "Installed server md5 '" + installed + "' != bundled " + expectedMd5);
+                if (packageName != null && packageName.matches("[A-Za-z0-9._]+")) {
+                    // The target may have this app installed too (always true when it shares itself
+                    // over Cloudflare): its APK already contains the same server, so copy it locally
+                    // instead of uploading it chunk by chunk.
+                    String local = run(buildLocalCopyCommand(packageName), HASH, "Could not inspect the installed server.");
+                    if (expectedMd5.equalsIgnoreCase(local)) {
+                        DiagnosticLog.i("adb", "Copied the server from this app's APK on the target; upload skipped");
+                        return;
+                    }
+                    DiagnosticLog.i("adb", "No matching copy of this app on the target (md5 '" + local + "')");
+                }
+                DiagnosticLog.i("adb", "Uploading " + server.length + " bytes");
             }
 
             long started = System.currentTimeMillis();

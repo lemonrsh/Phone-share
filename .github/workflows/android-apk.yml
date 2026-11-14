@@ -13,10 +13,19 @@ on:
         type: boolean
         default: false
       release_tag:
-        description: Git tag for the release (for example v5.0.1)
+        description: Git tag for the standard release (for example v5.0.1). The cloudflared edition is released as <tag>-cloudflared
         required: true
         type: string
         default: v5.0.1
+      prerelease:
+        description: Mark the release as a pre-release (test builds)
+        required: false
+        type: boolean
+        default: false
+
+env:
+  # Cloudflare connector bundled in the cloudflared edition ("Share this phone over the internet").
+  CLOUDFLARED_VERSION: '2026.11.0'
 
 permissions:
   contents: read
@@ -41,15 +50,69 @@ jobs:
         with:
           packages: 'platform-tools platforms;android-36 build-tools;36.0.0'
 
+      - name: Restore cloudflared for Android
+        id: cloudflared-cache
+        uses: actions/cache@v6
+        with:
+          path: app/src/cloudflared/jniLibs
+          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-flavor-static-x64-${{ hashFiles('tools/cloudflared/**') }}
+
+      - name: Check out cloudflared
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        uses: actions/checkout@v7
+        with:
+          repository: cloudflare/cloudflared
+          ref: ${{ env.CLOUDFLARED_VERSION }}
+          path: .cloudflared-src
+
+      - name: Set up Go
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: .cloudflared-src/go.mod
+          cache-dependency-path: .cloudflared-src/go.sum
+
+      - name: Build cloudflared for Android (arm64-v8a, armeabi-v7a, x86_64)
+        if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
+        run: |
+          set -euo pipefail
+          OUT="$GITHUB_WORKSPACE/app/src/cloudflared/jniLibs"
+          cp tools/cloudflared/android_dns.go .cloudflared-src/cmd/cloudflared/zz_scrcpy_android_dns.go
+          cd .cloudflared-src
+          # A static Linux binary (no cgo): it does not depend on Android's dynamic linker or
+          # Bionic's TLS layout, so it starts on every Android version. GOOS=android builds
+          # crashed at startup (SIGSEGV) on Android 17. DNS: see tools/cloudflared/android_dns.go.
+          build() {
+            local abi=$1 goarch=$2
+            mkdir -p "$OUT/$abi"
+            env CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" ${3:+GOARM=$3} \
+              go build -trimpath -ldflags "-s -w -X main.Version=$CLOUDFLARED_VERSION" \
+              -o "$OUT/$abi/libcloudflared.so" ./cmd/cloudflared
+            file "$OUT/$abi/libcloudflared.so" || true
+            ls -l "$OUT/$abi/libcloudflared.so"
+          }
+          build arm64-v8a arm64
+          build armeabi-v7a arm 7
+          # x86_64: Waydroid and emulators on PCs. ARM programs only run there through a
+          # translator, which crashes on cloudflared (SIGSEGV).
+          build x86_64 amd64
+          # goprobe: a tiny Go program the app runs first to diagnose start-up problems.
+          cd "$GITHUB_WORKSPACE/tools/cloudflared/probe"
+          env CGO_ENABLED=0 GOOS=linux GOARCH=arm64 go build -trimpath -ldflags "-s -w" -o "$OUT/arm64-v8a/libgoprobe.so" .
+          env CGO_ENABLED=0 GOOS=linux GOARCH=arm GOARM=7 go build -trimpath -ldflags "-s -w" -o "$OUT/armeabi-v7a/libgoprobe.so" .
+          mkdir -p "$OUT/x86_64"
+          env CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags "-s -w" -o "$OUT/x86_64/libgoprobe.so" .
+          file "$OUT"/*/libgoprobe.so || true
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.4.1
 
-      - name: Test and build debug and release APKs
+      - name: Test and build debug and release APKs (standard and cloudflared editions)
         id: gradle-build
         continue-on-error: true
         run: |
           set -o pipefail
-          ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
+          ./gradlew --no-daemon --console=plain testStandardDebugUnitTest testCloudflaredDebugUnitTest assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
 
       - name: Report Gradle failure details
         if: ${{ steps.gradle-build.outcome == 'failure' }}
@@ -75,9 +138,7 @@ jobs:
         uses: actions/upload-artifact@v7
         with:
           name: scrcpy-android-apks
-          path: |
-            app/build/outputs/apk/debug/*.apk
-            app/build/outputs/apk/release/*.apk
+          path: app/build/outputs/apk/**/*.apk
           if-no-files-found: error
           retention-days: 14
 
@@ -98,6 +159,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
+          PRERELEASE: ${{ inputs.prerelease }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -108,19 +170,47 @@ jobs:
             echo "Release $RELEASE_TAG already exists; refusing to overwrite it." >&2
             exit 1
           fi
-          release_apk=$(find dist -type f -name '*release*.apk' -print -quit)
-          debug_apk=$(find dist -type f -name '*debug*.apk' -print -quit)
-          if [[ -z "$release_apk" || -z "$debug_apk" ]]; then
-            echo "Expected both release and debug APKs in the downloaded artifact." >&2
-            find dist -type f -print >&2
-            exit 1
+          find dist -type f -name '*.apk' -print
+          pick() {
+            local found
+            found=$(find dist -type f -name "$1" -print -quit)
+            if [[ -z "$found" ]]; then
+              echo "Missing $1 in the downloaded artifact." >&2
+              exit 1
+            fi
+            echo "$found"
+          }
+          CF_TAG="${RELEASE_TAG}-cloudflared"
+          for tag in "$RELEASE_TAG" "$CF_TAG"; do
+            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+              echo "Release $tag already exists; refusing to overwrite it." >&2
+              exit 1
+            fi
+          done
+          cp "$(pick 'app-standard-release*.apk')" "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk"
+          cp "$(pick 'app-standard-debug.apk')" "dist/scrcpy-android-${RELEASE_TAG}-debug.apk"
+          cp "$(pick 'app-cloudflared-release*.apk')" "dist/scrcpy-android-${CF_TAG}-unsigned.apk"
+          cp "$(pick 'app-cloudflared-debug.apk')" "dist/scrcpy-android-${CF_TAG}-debug.apk"
+          extra=()
+          latest=(--latest)
+          if [[ "$PRERELEASE" == "true" ]]; then
+            extra+=(--prerelease)
+            latest=()
           fi
-          cp "$release_apk" "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk"
-          cp "$debug_apk" "dist/scrcpy-android-${RELEASE_TAG}-debug.apk"
-          gh release create "$RELEASE_TAG" \
+          install_note="Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings (from 5.0.1-r9 on). The release APK is unsigned unless release signing is configured. The standard and cloudflared editions share the same app id and key, so you can switch between them by installing the other one."
+          # Cloudflared edition first, so that the standard edition ends up as the latest release.
+          gh release create "$CF_TAG" "${extra[@]}" \
+            "dist/scrcpy-android-${CF_TAG}-unsigned.apk" \
+            "dist/scrcpy-android-${CF_TAG}-debug.apk" \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$GITHUB_SHA" \
+            --latest=false \
+            --title "scrcpy Android $CF_TAG (with Cloudflare sharing)" \
+            --notes "Cloudflared edition, built from $GITHUB_SHA: everything in the standard edition plus \"Share this phone over the internet\" (bundled cloudflared for arm64-v8a, armeabi-v7a and x86_64) and connecting with share codes. Same source as $RELEASE_TAG. $install_note"
+          gh release create "$RELEASE_TAG" "${extra[@]}" "${latest[@]}" \
             "dist/scrcpy-android-${RELEASE_TAG}-unsigned.apk" \
             "dist/scrcpy-android-${RELEASE_TAG}-debug.apk" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "scrcpy Android $RELEASE_TAG" \
-            --notes "Built from $GITHUB_SHA. The release APK is unsigned unless release signing is configured. Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings (from 5.0.1-r9 on)."
+            --notes "Standard edition (no Cloudflare), built from $GITHUB_SHA. Same source as $CF_TAG, which adds Cloudflare sharing. $install_note"

@@ -37,6 +37,14 @@ public class AdbLauncherTest {
     }
 
     @Test
+    public void copiesTheServerFromTheTargetsOwnApp() {
+        String command = AdbLauncher.buildLocalCopyCommand("org.las2mile.scrcpy");
+        assertTrue(command.contains("pm path org.las2mile.scrcpy"));
+        assertTrue(command.contains("unzip -p \"$p\" assets/scrcpy-server.jar > /data/local/tmp/scrcpy-server.jar"));
+        assertTrue(command.endsWith("echo SCRCPY_HASH_${h%% *}_END"));
+    }
+
+    @Test
     public void md5MatchesKnownValue() {
         assertEquals("900150983cd24fb0d6963f7d28e17f72", AdbLauncher.md5Hex("abc".getBytes()));
     }

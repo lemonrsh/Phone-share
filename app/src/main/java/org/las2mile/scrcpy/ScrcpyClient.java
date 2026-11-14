@@ -350,7 +350,12 @@ public final class ScrcpyClient {
             }
             socket.setTcpNoDelay(true);
             socket.setKeepAlive(true);
-            socket.connect(new InetSocketAddress(host, ScrcpySessionOptions.SERVER_PORT), SOCKET_CONNECT_TIMEOUT_MS);
+            if (CloudTunnel.isTunnelHost(host)) {
+                // Through the shared phone's Cloudflare tunnel (see ShareService).
+                CloudTunnel.connect(socket, host, CloudTunnel.TARGET_SCRCPY, SOCKET_CONNECT_TIMEOUT_MS);
+            } else {
+                socket.connect(new InetSocketAddress(host, ScrcpySessionOptions.SERVER_PORT), SOCKET_CONNECT_TIMEOUT_MS);
+            }
             return socket;
         } catch (IOException | RuntimeException e) {
             closeQuietly(socket);

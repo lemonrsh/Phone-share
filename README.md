@@ -2,7 +2,19 @@
 
 An Android-to-Android viewer for a remote Android device connected over Wi-Fi. The bundled server source is pinned to the upstream [Genymobile/scrcpy `v5.0.1` tag](https://github.com/Genymobile/scrcpy/releases/tag/v5.0.1). The app uses a small TCP transport adapter so it can connect directly from an Android device without a desktop `adb forward` process.
 
+## Editions
+
+Every release is built from the same source in two editions (Gradle product flavors). They share the app id and signing key, so either one installs over the other and keeps your settings.
+
+| Edition | Release tag | What it adds | APK size |
+|---|---|---|---|
+| **standard** | `v5.0.1-rNN` | Connect to and control other phones by IP address. No Cloudflare. | small |
+| **cloudflared** | `v5.0.1-rNN-cloudflared` | Everything in standard, plus **Share this phone over the internet** and connecting with share codes. Bundles `cloudflared` (`app/src/cloudflared`). | about 40 MB larger |
+
 ## Features
+
+- **Start-up ADB question**: when ADB over Wi-Fi (port 5555) is off on this phone, the app asks once per launch: **Enable ADB** (one tap with root, otherwise it shows how to turn it on) or **Nah, I just want to control another phone**, which just opens the app. Tick **Don't ask again** to stop the question.
+- **"scrcpy is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
 
 - Full-screen mirroring or a YouTube-style floating player (see below).
 - Light and dark settings screens.
@@ -20,11 +32,16 @@ An Android-to-Android viewer for a remote Android device connected over Wi-Fi. T
 - Options are split into a green **Normal settings** box and a blue **Advanced settings** box. Both start collapsed; tap a title to show or hide its options. Normal holds the everyday settings, including **Play audio on both devices** (`--audio-dup`) and **Keep the remote screen awake** (`--keep-active`).
 - Debug APKs are signed with a fixed project key (`app/debug.keystore`), so updates install over the previous version and keep all saved settings.
 - The main screen shows the connection state (**Connected to …** / **Disconnected**), and a message appears when a session connects or ends, in full-screen and floating mode. While connected, the top button turns into **Disconnect**.
+- **Share this phone over the internet (cloudflared edition only)**: on the phone to be mirrored, tap **Start sharing**. The app starts a bundled `cloudflared` [quick tunnel](https://try.cloudflare.com) (no Cloudflare account) and shows a share code such as `blue-river-cat.trycloudflare.com#482913` with **Copy code** and **Send…** buttons. On the other phone, paste the code into the address box and tap **Connect**; it works from any network, no same Wi-Fi or VPN needed. The code changes every time sharing starts, and the 6-digit PIN protects it.
+  - How it works: the shared phone runs a PIN-checked WebSocket bridge on 127.0.0.1 to its own ADB (5555) and scrcpy (7007) ports, and cloudflared publishes it. The controlling phone opens each connection as a `wss://` WebSocket and needs nothing extra.
+  - Needs ADB over Wi-Fi on port 5555 on the shared phone (`adb tcpip 5555`, or root); the app says so if it is off. Tap **Allow** on the shared phone the first time.
+  - Quick tunnels are Cloudflare's free testing service: no uptime guarantee, and video goes through Cloudflare, so expect more delay than on the same Wi-Fi.
+  - `cloudflared` is built by CI as a static Linux binary (arm64-v8a, armeabi-v7a, and x86_64 for Waydroid/emulators, where translated ARM binaries crash; no Android linker or Bionic dependency, so it starts on every Android version) and bundled as `libcloudflared.so`; it is not in the repository. Android has no `/etc/resolv.conf`, so the app passes the phone's DNS servers to it (`tools/cloudflared/android_dns.go`).
 - **Who is mirroring this phone**: when another phone with this app (r11 or newer) mirrors this phone, and this phone has the app too, the top of its main screen shows **"<phone name> is connected to this phone"** with the controller's IP and start time, plus a red **Disconnect** button that ends that session. No root is needed: the scrcpy server reports itself on a loopback-only port (127.0.0.1:27200–27204), so only apps on this phone can see it. Sessions started by desktop scrcpy or older versions of this app are not shown.
 - **ADB on this device (port 5555)**: shows whether this phone accepts ADB over Wi-Fi and its address, so another device can mirror it. With root, one tap turns it on (optionally across reboots) or off. Without root, Android only allows it from a computer (`adb tcpip 5555`); the app explains the steps.
 - Remote audio playback (AAC, Opus, FLAC or raw) for compatible target devices (Android 11 or newer).
 - Settings are remembered on the phone.
-- The server is only uploaded when the copy on the target differs, so reconnecting is fast.
+- The server is only uploaded when the copy on the target differs, so reconnecting is fast. If the target has the same version of this app installed, the server is copied out of that app on the target instead of being uploaded (much faster over Cloudflare).
 - Rotation and app switching keep the session alive (the decoder is rebuilt on the new surface and a fresh key frame is requested).
 - The floating window runs as a foreground service (with a **Stop** action in its notification) so Android does not stop it in the background.
 
@@ -74,12 +91,13 @@ Connection errors are reported in the app (for example ADB not listening, author
 Requirements: JDK 17, Android SDK Platform 36, Android build-tools 36.0.0, and internet access to the Android/Gradle dependency repositories.
 
 ```sh
-./gradlew assembleDebug
+./gradlew assembleStandardDebug      # standard edition
+./gradlew assembleCloudflaredDebug   # cloudflared edition (needs app/src/cloudflared/jniLibs, built by CI)
 ```
 
-The Gradle build compiles the v5.0.1 server module and packages its APK-form server artifact as `scrcpy-server.jar` inside the viewer APK. The debug APK is written under `app/build/outputs/apk/debug/`.
+The Gradle build compiles the v5.0.1 server module and packages its dex files as `scrcpy-server.jar` inside the viewer APK. APKs are written under `app/build/outputs/apk/<edition>/<debug|release>/`.
 
-`assembleRelease` currently produces an unsigned release APK. Configure a private signing key in your local Gradle environment before distributing a release build; do not commit signing credentials. The **Android APK** GitHub Actions workflow builds and tests both APK variants on pull requests and pushes to `main`. Dispatch it manually with **Publish GitHub release** enabled to attach the unsigned release APK and a debug-signed test APK; the CI-generated debug key is not stable for future updates.
+`assembleRelease` currently produces an unsigned release APK. Configure a private signing key in your local Gradle environment before distributing a release build; do not commit signing credentials. The **Android APK** GitHub Actions workflow builds and tests both APK variants on pull requests and pushes to `main`. Dispatch it manually with **Publish GitHub release** enabled to publish two releases from the same commit: `<tag>` (standard edition, marked latest) and `<tag>-cloudflared`, each with an unsigned release APK and a debug APK signed with the fixed project key.
 
 ## Licensing
 

@@ -8,6 +8,7 @@ import android.content.ClipData;
 import android.content.ClipboardManager;
 import android.content.Intent;
 import android.content.SharedPreferences;
+import android.content.pm.PackageManager;
 import android.content.pm.ActivityInfo;
 import android.content.res.Configuration;
 import android.hardware.Sensor;
@@ -29,6 +30,7 @@ import android.view.WindowManager;
 import android.widget.AdapterView;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
+import android.widget.CheckBox;
 import android.widget.EditText;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
@@ -52,6 +54,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static final String PREFERENCE_AUTO_FLOAT = "auto_float";
     private static final String PREFERENCE_AUDIO_DUP = "Audio Dup";
     private static final String PREFERENCE_KEEP_ACTIVE = "Keep Active";
+    private static final String PREFERENCE_ADB_PROMPT_OFF = "adb_prompt_off";
+    private static final int REQUEST_NOTIFICATIONS = 1;
+    /** The start-up ADB question is asked at most once per app launch. */
+    private static boolean adbPromptChecked;
     private static final long BACK_PRESS_INTERVAL_MS = 1_500;
 
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
@@ -98,7 +104,105 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         });
         showSettings();
         SessionState.addListener(this);
+        ShareService.addListener(shareListener);
+        RunningNotification.setStopHandler(stopFromNotification);
+        if (savedInstanceState == null) {
+            checkAdbOnStartup();
+        }
     }
+
+    /** Stop in the "scrcpy is running" notification, for a session shown by this activity. */
+    private final Runnable stopFromNotification = () -> {
+        if (launcher != null) {
+            launcher.cancel();
+            launcher = null;
+            SessionState.disconnected(null);
+            restoreStartButton();
+        }
+        if (mirroring) {
+            stopMirroring(null);
+        }
+    };
+
+    private boolean isCloudflareEdition() {
+        return getResources().getBoolean(R.bool.cloudflare_edition);
+    }
+
+    // ---------------------------------------------------------------- start-up ADB question
+
+    /** When ADB over Wi-Fi is off: offer to turn it on, or just use the app as a controller. */
+    private void checkAdbOnStartup() {
+        if (adbPromptChecked || getPreferences().getBoolean(PREFERENCE_ADB_PROMPT_OFF, false)) {
+            return;
+        }
+        adbPromptChecked = true;
+        new Thread(() -> {
+            final boolean listening = LocalAdb.isListening();
+            runOnUiThread(() -> {
+                if (!listening && !mirroring && launcher == null && !isFinishing() && !isDestroyed()) {
+                    showAdbPrompt();
+                }
+            });
+        }, "adb-startup-check").start();
+    }
+
+    private void showAdbPrompt() {
+        final CheckBox dontAsk = new CheckBox(this);
+        dontAsk.setText(R.string.adb_prompt_dont_ask);
+        int padding = Math.round(20 * getResources().getDisplayMetrics().density);
+        FrameLayout box = new FrameLayout(this);
+        box.setPadding(padding, padding / 3, padding, 0);
+        box.addView(dontAsk);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.adb_prompt_title)
+                .setMessage(R.string.adb_prompt_message)
+                .setView(box)
+                .setPositiveButton(R.string.adb_prompt_enable, (dialog, which) -> {
+                    rememberAdbPrompt(dontAsk.isChecked());
+                    DiagnosticLog.i("app", "Start-up: user chose to enable ADB");
+                    changeLocalAdb(true); // root: done; otherwise shows how to do it
+                })
+                .setNegativeButton(R.string.adb_prompt_skip, (dialog, which) -> {
+                    rememberAdbPrompt(dontAsk.isChecked());
+                    DiagnosticLog.i("app", "Start-up: user only wants to control another phone");
+                })
+                .setOnCancelListener(dialog -> rememberAdbPrompt(dontAsk.isChecked()))
+                .show();
+    }
+
+    private void rememberAdbPrompt(boolean dontAskAgain) {
+        if (dontAskAgain) {
+            getPreferences().edit().putBoolean(PREFERENCE_ADB_PROMPT_OFF, true).apply();
+        }
+    }
+
+    // ---------------------------------------------------------------- "scrcpy is running" notification
+
+    /** Shows the notification while this activity runs a session, removes it otherwise. */
+    private void updateRunningNotification() {
+        boolean own = launcher != null || client != null;
+        if (own && isSessionActive()) {
+            String who = SessionState.describe(SessionState.getHost(), SessionState.getDeviceName());
+            RunningNotification.show(this, getString(SessionState.getStatus() == SessionState.Status.CONNECTED
+                    ? R.string.notification_connected : R.string.notification_connecting, who));
+        } else {
+            RunningNotification.cancel(this);
+        }
+    }
+
+    /** Android 13+ needs the user's permission to show the notification. */
+    private void requestNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33
+                && checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+            try {
+                requestPermissions(new String[]{android.Manifest.permission.POST_NOTIFICATIONS}, REQUEST_NOTIFICATIONS);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "Could not ask for the notification permission", e);
+            }
+        }
+    }
+
+    private final ShareService.Listener shareListener = this::renderCloudShare;
 
     // ---------------------------------------------------------------- settings screen
 
@@ -123,8 +227,84 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setupCollapsible(R.id.header_normal, R.id.body_normal, R.string.section_scrcpy);
         setupCollapsible(R.id.header_advanced, R.id.options_container, R.string.options_more_title);
         setupLocalAdbCard();
+        View cloudCard = findViewById(R.id.card_cloud_share);
+        if (isCloudflareEdition()) {
+            setupCloudShareCard();
+        } else if (cloudCard != null) {
+            cloudCard.setVisibility(View.GONE); // standard edition: no Cloudflare
+        }
         updateSessionStatusView();
         renderIncomingSessions();
+    }
+
+    // ---------------------------------------------------------------- share over the internet
+
+    private void setupCloudShareCard() {
+        Button toggle = findViewById(R.id.button_cloud_share);
+        if (toggle == null) {
+            return;
+        }
+        toggle.setOnClickListener(view -> {
+            ShareService.Phase phase = ShareService.phase();
+            boolean active = phase == ShareService.Phase.STARTING || phase == ShareService.Phase.WAITING
+                    || phase == ShareService.Phase.ONLINE;
+            Intent intent = new Intent(this, ShareService.class)
+                    .setAction(active ? ShareService.ACTION_STOP : ShareService.ACTION_START);
+            try {
+                if (!active && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    startForegroundService(intent);
+                } else {
+                    startService(intent);
+                }
+            } catch (RuntimeException e) {
+                Toast.makeText(this, getString(R.string.share_failed, e.getMessage()), Toast.LENGTH_LONG).show();
+            }
+        });
+        findViewById(R.id.button_cloud_share_copy).setOnClickListener(view -> {
+            String code = ShareService.shareCode();
+            ClipboardManager clipboard = (ClipboardManager) getSystemService(CLIPBOARD_SERVICE);
+            if (code != null && clipboard != null) {
+                clipboard.setPrimaryClip(ClipData.newPlainText("scrcpy share code", code));
+                Toast.makeText(this, R.string.share_copied, Toast.LENGTH_SHORT).show();
+            }
+        });
+        findViewById(R.id.button_cloud_share_send).setOnClickListener(view -> {
+            String code = ShareService.shareCode();
+            if (code == null) {
+                return;
+            }
+            Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
+                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.share_send_text, code));
+            try {
+                startActivity(Intent.createChooser(send, getString(R.string.share_send)));
+            } catch (RuntimeException e) {
+                Toast.makeText(this, e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+        renderCloudShare();
+    }
+
+    private void renderCloudShare() {
+        Button toggle = mirroring ? null : (Button) findViewById(R.id.button_cloud_share);
+        if (toggle == null) {
+            return;
+        }
+        TextView status = findViewById(R.id.text_cloud_share_status);
+        TextView code = findViewById(R.id.text_cloud_share_code);
+        ShareService.Phase phase = ShareService.phase();
+        boolean active = phase == ShareService.Phase.STARTING || phase == ShareService.Phase.WAITING
+                || phase == ShareService.Phase.ONLINE;
+        toggle.setText(active ? R.string.share_stop : R.string.share_start);
+        toggle.setBackgroundResource(active ? R.drawable.bg_disconnect_button : R.drawable.bg_start_button);
+        String message = ShareService.message();
+        status.setVisibility(message == null ? View.GONE : View.VISIBLE);
+        status.setText(message == null ? "" : message);
+        String shareCode = ShareService.shareCode();
+        boolean showCode = phase == ShareService.Phase.ONLINE && shareCode != null;
+        code.setVisibility(showCode ? View.VISIBLE : View.GONE);
+        code.setText(showCode ? shareCode : "");
+        findViewById(R.id.button_cloud_share_copy).setEnabled(showCode);
+        findViewById(R.id.button_cloud_share_send).setEnabled(showCode);
     }
 
     // ---------------------------------------------------------------- incoming sessions
@@ -142,6 +322,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             View item = inflater.inflate(R.layout.item_incoming_session, container, false);
             final String name = session.clientName.isEmpty() ? getString(R.string.incoming_unknown_name) : session.clientName;
             String ip = session.clientIp.isEmpty() ? "?" : session.clientIp;
+            if ("127.0.0.1".equals(ip)) {
+                ip = getString(R.string.incoming_via_cloudflare); // came in through ShareService
+            }
             String since = session.startMillis > 0 ? timeFormat.format(new java.util.Date(session.startMillis)) : "?";
             ((TextView) item.findViewById(R.id.incoming_title)).setText(getString(R.string.incoming_title, name));
             ((TextView) item.findViewById(R.id.incoming_detail)).setText(getString(R.string.incoming_detail, ip, since));
@@ -180,6 +363,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @Override
     public void onSessionStateChanged(SessionState.Status status, String host, String deviceName, String message) {
         updateSessionStatusView();
+        updateRunningNotification();
     }
 
     private void updateSessionStatusView() {
@@ -429,6 +613,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (!readSettings()) {
             return;
         }
+        requestNotificationPermission();
         if (sessionOptions.floatingWindow) {
             showFloatingWindow();
             return;
@@ -680,8 +865,11 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         HostAddress address = HostAddress.parse(serverText);
         if (address == null) {
-            Toast.makeText(this, "Invalid address. Use an IP such as 192.168.1.42 or 192.168.1.42:5555",
-                    Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.error_invalid_address, Toast.LENGTH_LONG).show();
+            return false;
+        }
+        if (address.isTunnel() && !isCloudflareEdition()) {
+            Toast.makeText(this, R.string.error_tunnel_needs_cloudflared, Toast.LENGTH_LONG).show();
             return false;
         }
         hostAddress = address;
@@ -928,6 +1116,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             SessionState.disconnected("Could not open the floating window");
         }
         DiagnosticLog.i("app", "Leaving the app: moving the mirror to the floating window");
+        updateRunningNotification(); // the floating window shows its own notification
         getWindow().clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         setRequestedOrientation(ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED);
         showSystemUi();
@@ -1056,6 +1245,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @Override
     protected void onDestroy() {
         SessionState.removeListener(this);
+        ShareService.removeListener(shareListener);
+        RunningNotification.clearStopHandler(stopFromNotification);
         clipboardSync.stop();
         boolean hadSession = launcher != null || client != null;
         if (launcher != null) {
@@ -1069,6 +1260,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         if (hadSession) {
             SessionState.disconnected(null);
+            RunningNotification.cancel(this);
         }
         if (Build.VERSION.SDK_INT >= 33 && backCallback != null) {
             BackCallbacks.unregister(this, backCallback);

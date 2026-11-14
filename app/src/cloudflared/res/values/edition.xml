@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- cloudflared edition: Cloudflare sharing and share codes. -->
+<resources>
+    <bool name="cloudflare_edition">true</bool>
+    <string name="hint_server_ip">192.168.1.42 or a share code (…trycloudflare.com#PIN)</string>
+    <string name="error_invalid_address">Invalid address. Use an IP such as 192.168.1.42 or 192.168.1.42:5555, or a share code such as blue-river-cat.trycloudflare.com#123456</string>
+</resources>

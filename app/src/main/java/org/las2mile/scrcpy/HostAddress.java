@@ -1,15 +1,25 @@
 package org.las2mile.scrcpy;
 
-/** Parses the "host" or "host:port" text typed in the connection field. */
+/**
+ * Parses the "host" or "host:port" text typed in the connection field, or a Cloudflare share
+ * code such as {@code blue-river-cat.trycloudflare.com#123456} (see {@link CloudTunnel}).
+ */
 public final class HostAddress {
     public static final int DEFAULT_ADB_PORT = 5555;
 
     public final String host;
     public final int port;
+    /** The share PIN of a Cloudflare share code, or null. */
+    public final String pin;
 
-    private HostAddress(String host, int port) {
+    private HostAddress(String host, int port, String pin) {
         this.host = host;
         this.port = port;
+        this.pin = pin;
+    }
+
+    public boolean isTunnel() {
+        return CloudTunnel.isTunnelHost(host);
     }
 
     /**
@@ -23,6 +33,37 @@ public final class HostAddress {
         }
         String value = text.trim();
         if (value.isEmpty() || value.indexOf(' ') >= 0) {
+            return null;
+        }
+        String pin = null;
+        int hash = value.indexOf('#');
+        if (hash >= 0) {
+            pin = value.substring(hash + 1);
+            value = value.substring(0, hash);
+            if (!pin.matches("[0-9]{4,12}")) {
+                return null;
+            }
+        }
+        String lower = value.toLowerCase(java.util.Locale.ROOT);
+        for (String scheme : new String[] {"https://", "http://", "wss://", "ws://"}) {
+            if (lower.startsWith(scheme)) {
+                value = value.substring(scheme.length());
+                lower = lower.substring(scheme.length());
+                break;
+            }
+        }
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
+        }
+        if (CloudTunnel.isTunnelHost(value)) {
+            String host = value.toLowerCase(java.util.Locale.ROOT);
+            if (!host.matches("[a-z0-9.-]+")) {
+                return null;
+            }
+            CloudTunnel.rememberPin(host, pin);
+            return new HostAddress(host, DEFAULT_ADB_PORT, pin);
+        }
+        if (pin != null || value.isEmpty()) {
             return null;
         }
 
@@ -54,7 +95,7 @@ public final class HostAddress {
         if (host.isEmpty() || port <= 0) {
             return null;
         }
-        return new HostAddress(host, port);
+        return new HostAddress(host, port, null);
     }
 
     private static int parsePort(String text) {
@@ -72,6 +113,9 @@ public final class HostAddress {
 
     @Override
     public String toString() {
+        if (isTunnel()) {
+            return host + " (Cloudflare)";
+        }
         return (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
     }
 }
