@@ -4,15 +4,14 @@ import android.content.Context;
 import android.util.AttributeSet;
 import android.util.DisplayMetrics;
 import android.util.Log;
-import android.view.Display;
 import android.view.LayoutInflater;
 import android.view.MotionEvent;
 import android.view.Surface;
 import android.view.SurfaceView;
 import android.view.View;
 import android.view.ViewGroup;
-import android.view.WindowManager;
 import android.widget.FrameLayout;
+import android.widget.TextView;
 
 public class DisplayWindow extends FrameLayout {
     private static final String TAG = "DisplayWindow";
@@ -167,37 +166,49 @@ public class DisplayWindow extends FrameLayout {
         return surfaceView;
     }
 
-    public void setRemote(int w,int h){
-        DisplayMetrics metrics = new DisplayMetrics();
-        WindowManager windowManager = (WindowManager) getContext().getSystemService(Context.WINDOW_SERVICE);
-        final Display display = windowManager.getDefaultDisplay();
-        display.getRealMetrics(metrics);
-        float this_dev_height = metrics.heightPixels;
-        float this_dev_width = Math.min(metrics.heightPixels,metrics.widthPixels);
-
+    /** Sizes the video area to the remote aspect ratio, within 90% x 85% of this screen. */
+    public void setRemote(final int w, final int h) {
+        if (w <= 0 || h <= 0) {
+            return;
+        }
         post(new Runnable() {
             @Override
             public void run() {
-                //根据比例设置高度
-                ViewGroup.LayoutParams lp = container.getLayoutParams();
-                float rate = (float)w/h;
-                Log.d(TAG, "setRemote: "+w+","+h+" %->"+rate);
-                //高度屏幕的80%，然后宽度按比例
-                lp.height = (int)(this_dev_height * 0.95 - actionbar.getMeasuredHeight() - header.getMeasuredHeight()-50);
-                lp.width = (int) (lp.height * rate);
-                container.setLayoutParams(lp);
+                DisplayMetrics metrics = getResources().getDisplayMetrics();
+                float maxWidth = metrics.widthPixels * 0.9f;
+                float maxHeight = metrics.heightPixels * 0.85f - actionbar.getMeasuredHeight() - header.getMeasuredHeight();
+                if (maxWidth <= 0 || maxHeight <= 0) {
+                    return;
+                }
+                float scale = Math.min(maxWidth / w, maxHeight / h);
+                int width = Math.max(1, Math.round(w * scale));
+                int height = Math.max(1, Math.round(h * scale));
+                Log.d(TAG, "setRemote: " + w + "x" + h + " -> " + width + "x" + height);
 
-                ViewGroup.LayoutParams lp2 = header.getLayoutParams();
-                lp2.width = lp.width;
-                header.setLayoutParams(lp2);
+                ViewGroup.LayoutParams lp = container.getLayoutParams();
+                if (lp.width != width || lp.height != height) {
+                    lp.width = width;
+                    lp.height = height;
+                    container.setLayoutParams(lp);
+                }
+                ViewGroup.LayoutParams headerParams = header.getLayoutParams();
+                if (headerParams.width != width) {
+                    headerParams.width = width;
+                    header.setLayoutParams(headerParams);
+                }
                 requestLayout();
             }
         });
-
     }
 
-    public void hideHintTip(){
+    public void hideHintTip() {
         findViewById(R.id.hint).setVisibility(GONE);
+    }
+
+    public void showHint(String text) {
+        TextView hint = findViewById(R.id.hint);
+        hint.setText(text);
+        hint.setVisibility(VISIBLE);
     }
 
     public void setControlEnabled(boolean enabled) {

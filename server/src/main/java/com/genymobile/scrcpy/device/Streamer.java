@@ -22,6 +22,7 @@ public final class Streamer {
     private final boolean sendFrameMeta;
 
     private final ByteBuffer headerBuffer = ByteBuffer.allocate(12);
+    private final byte[] chunk = new byte[64 * 1024];
 
     public Streamer(OutputStream outputStream, Codec codec, boolean sendCodecMeta, boolean sendFrameMeta) {
         this.outputStream = outputStream;
@@ -103,7 +104,14 @@ public final class Streamer {
     }
 
     private void writeFully(ByteBuffer buffer) throws IOException {
-        byte[] chunk = new byte[Math.min(buffer.remaining(), 8192)];
+        if (buffer.hasArray()) {
+            // Heap buffers (headers): write directly, without copying.
+            int length = buffer.remaining();
+            outputStream.write(buffer.array(), buffer.arrayOffset() + buffer.position(), length);
+            buffer.position(buffer.position() + length);
+            return;
+        }
+        // Direct (MediaCodec) buffers: copy through a reusable chunk to avoid per-packet allocations.
         while (buffer.hasRemaining()) {
             int length = Math.min(buffer.remaining(), chunk.length);
             buffer.get(chunk, 0, length);
