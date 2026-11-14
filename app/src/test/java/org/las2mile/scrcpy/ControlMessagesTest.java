@@ -48,4 +48,30 @@ public class ControlMessagesTest {
         assertEquals(0xffff, ControlMessages.toU16FixedPoint(1f));
         assertEquals(0xffff, ControlMessages.toU16FixedPoint(2f));
     }
+
+    @Test
+    public void encodesSetClipboard() {
+        byte[] message = ControlMessages.setClipboard(7, "héllo", false);
+        ByteBuffer buffer = ByteBuffer.wrap(message);
+        assertEquals(ControlMessages.TYPE_SET_CLIPBOARD, buffer.get());
+        assertEquals(7L, buffer.getLong());
+        assertEquals(0, buffer.get());
+        assertEquals(6, buffer.getInt()); // é is two bytes in UTF-8
+        assertEquals(6, buffer.remaining());
+    }
+
+    @Test
+    public void encodesStartApp() {
+        byte[] message = ControlMessages.startApp("com.example");
+        assertEquals(ControlMessages.TYPE_START_APP, message[0]);
+        assertEquals(11, message[1]);
+        assertEquals(13, message.length);
+    }
+
+    @Test
+    public void truncatesUtf8AtCharacterBoundary() {
+        // "aé" is 61 C3 A9: cutting at 2 bytes must not split é.
+        assertEquals(1, ControlMessages.truncateUtf8("aé", 2).length);
+        assertEquals(3, ControlMessages.truncateUtf8("aé", 3).length);
+    }
 }

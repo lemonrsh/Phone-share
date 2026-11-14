@@ -9,6 +9,10 @@
         <item name="colorTextSecondary">#697386</item>
         <item name="colorCardOutline">#E1E6EF</item>
         <item name="colorAccentScrcpy">#4F46E5</item>
+        <item name="colorOptionsBackground">#ECFDF3</item>
+        <item name="colorOptionsOutline">#22C55E</item>
+        <item name="colorOptionsAccent">#15803D</item>
+        <item name="colorStatusBackground">#FFFFFF</item>
     </style>
 
     <style name="AppThemeDark" parent="android:Theme.Material.NoActionBar">
@@ -21,5 +25,9 @@
         <item name="colorTextSecondary">#A8B0C0</item>
         <item name="colorCardOutline">#30394A</item>
         <item name="colorAccentScrcpy">#6366F1</item>
+        <item name="colorOptionsBackground">#0F2A1D</item>
+        <item name="colorOptionsOutline">#22C55E</item>
+        <item name="colorOptionsAccent">#4ADE80</item>
+        <item name="colorStatusBackground">#191E2A</item>
     </style>
 </resources>

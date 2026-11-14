@@ -346,13 +346,14 @@ public final class AdbLauncher {
         StringBuilder command = new StringBuilder();
         command.append("export CLASSPATH=").append(SERVER_PATH).append("; exec");
         command.append(" app_process / com.genymobile.scrcpy.Server ").append(ScrcpySessionOptions.SERVER_VERSION);
-        command.append(" log_level=info");
+        command.append(" log_level=").append(oneOf(options.logLevel, "info", "verbose", "debug", "info", "warn", "error"));
         command.append(" tcp_port=").append(ScrcpySessionOptions.SERVER_PORT);
         command.append(" tcp_client=").append(localAddress);
         command.append(" tunnel_forward=false");
         command.append(" video=true audio=").append(options.audioEnabled);
         command.append(" control=").append(!options.noControl);
-        command.append(" video_codec=h264 audio_codec=aac");
+        command.append(" video_codec=").append(oneOf(options.videoCodec, "h264", "h264", "h265", "av1"));
+        command.append(" audio_codec=").append(oneOf(options.audioCodec, "aac", "aac", "opus", "flac", "raw"));
         command.append(" max_size=").append(options.maxSize);
         command.append(" video_bit_rate=").append(options.videoBitRate);
         command.append(" max_fps=").append(options.maxFps);
@@ -360,11 +361,40 @@ public final class AdbLauncher {
         command.append(" power_off_on_close=").append(options.powerOffOnClose);
         command.append(" stay_awake=").append(options.stayAwake);
         command.append(" show_touches=").append(options.showTouches);
-        // The viewer never reads device messages, so do not make the server send clipboard updates.
-        command.append(" clipboard_autosync=false");
-        command.append(" cleanup=true send_dummy_byte=true send_device_meta=true");
+        // Device clipboard changes are only useful when they can be received (control socket).
+        command.append(" clipboard_autosync=").append(options.clipboardAutosync && !options.noControl);
+        command.append(" send_dummy_byte=true send_device_meta=true");
         command.append(" send_frame_meta=true send_stream_meta=true");
+        // Additional options from the options box; the values were validated by AdvancedOptions
+        // (no spaces or shell metacharacters). Keys already written above are never repeated.
+        for (java.util.Map.Entry<String, String> entry : options.extraArgs.entrySet()) {
+            String key = entry.getKey();
+            String value = entry.getValue();
+            if (!key.matches("[a-z_]+") || RESERVED_ARGS.contains(key)
+                    || !value.matches("[A-Za-z0-9._:,=/@+\\-]*")) {
+                continue;
+            }
+            command.append(' ').append(key).append('=').append(value);
+        }
         return command.toString();
+    }
+
+    /** Arguments the launcher controls itself; never taken from the options box. */
+    private static final java.util.Set<String> RESERVED_ARGS = new java.util.HashSet<>(java.util.Arrays.asList(
+            "scid", "log_level", "video", "audio", "video_codec", "audio_codec", "max_size", "video_bit_rate",
+            "max_fps", "tunnel_forward", "control", "show_touches", "stay_awake", "power_off_on_close",
+            "clipboard_autosync", "power_on", "tcp_port", "tcp_client", "send_device_meta", "send_frame_meta",
+            "send_dummy_byte", "send_stream_meta", "raw_stream", "list_encoders", "list_displays",
+            "list_cameras", "list_camera_sizes", "list_apps"));
+
+    private static String oneOf(String value, String fallback, String... allowed) {
+        String normalized = value == null ? "" : value.trim().toLowerCase(java.util.Locale.ROOT);
+        for (String candidate : allowed) {
+            if (candidate.equals(normalized)) {
+                return candidate;
+            }
+        }
+        return fallback;
     }
 
     private static byte[] loadServer(Context context) throws LaunchException {
