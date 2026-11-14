@@ -20,6 +20,7 @@ Every release is built from the same source in two editions (Gradle product flav
 - **"Phone Share is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
 
 - Full-screen mirroring or a YouTube-style floating player (see below).
+- **Settings page**: the main screen only has the connection status, **Connect**, the address box and sharing. The **gear button** in the top right corner opens **Settings** with ADB on this device, Appearance and window, the green **Normal** and blue **Advanced** settings, and Logs. The back arrow or Back returns to the main screen.
 - Green interface (light and dark), so the white status-bar icons are always readable.
 - **Clear** button next to the address box empties the IP address or share code.
 - **Recommended defaults**: 480p (854x480), 1 Mbps, 30 fps, H.264, audio on and playing on both devices (`--audio-dup`). They are applied once when updating to r14; after that every change is remembered. **↺ Use recommended settings** in the Normal box restores them at any time.

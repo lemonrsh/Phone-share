@@ -73,6 +73,15 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static boolean overlayPromptChecked;
     /** Back from the overlay settings opened by the start-up question: continue with the ADB question. */
     private boolean resumeStartupPrompts;
+    /** The settings page (gear button) is shown instead of the main page. */
+    private boolean settingsOpen;
+    private static final String STATE_SETTINGS_OPEN = "settings_open";
+
+    @Override
+    protected void onSaveInstanceState(Bundle outState) {
+        super.onSaveInstanceState(outState);
+        outState.putBoolean(STATE_SETTINGS_OPEN, settingsOpen && !mirroring);
+    }
     private static final long BACK_PRESS_INTERVAL_MS = 1_500;
 
     private ScrcpySessionOptions sessionOptions = new ScrcpySessionOptions();
@@ -117,6 +126,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             incoming = sessions;
             renderIncomingSessions();
         });
+        // Stay on the settings page when the activity is recreated (e.g. after switching dark mode).
+        settingsOpen = savedInstanceState != null && savedInstanceState.getBoolean(STATE_SETTINGS_OPEN, false);
         showSettings();
         SessionState.addListener(this);
         ShareService.addListener(shareListener);
@@ -282,6 +293,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         loadSavedPreferences();
         startButton.setOnClickListener(view -> onStartClicked(startButton));
         findViewById(R.id.button_recommended).setOnClickListener(view -> restoreRecommendedSettings());
+        findViewById(R.id.button_open_settings).setOnClickListener(view -> setSettingsPage(true));
+        findViewById(R.id.button_close_settings).setOnClickListener(view -> setSettingsPage(false));
         findViewById(R.id.button_clear_host).setOnClickListener(view -> {
             EditText host = findViewById(R.id.editText_server_host);
             host.setText("");
@@ -297,6 +310,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         setupCollapsible(R.id.header_normal, R.id.body_normal, R.string.section_scrcpy);
         setupCollapsible(R.id.header_advanced, R.id.options_container, R.string.options_more_title);
         setupLocalAdbCard();
+        applySettingsPage(false);
         View cloudCard = findViewById(R.id.card_cloud_share);
         if (isCloudflareEdition()) {
             setupCloudShareCard();
@@ -305,6 +319,40 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         updateSessionStatusView();
         renderIncomingSessions();
+    }
+
+    // ---------------------------------------------------------------- settings page
+
+    /** Gear button / back arrow: switch between the main page and the settings page. */
+    private void setSettingsPage(boolean open) {
+        if (mirroring || settingsOpen == open) {
+            return;
+        }
+        settingsOpen = open;
+        saveHostField();
+        applySettingsPage(true);
+        updateBackHandling();
+    }
+
+    private void applySettingsPage(boolean scrollToTop) {
+        View main = findViewById(R.id.page_main);
+        View settings = findViewById(R.id.page_settings);
+        View header = findViewById(R.id.header_bar);
+        if (main == null || settings == null || header == null) {
+            return;
+        }
+        main.setVisibility(settingsOpen ? View.GONE : View.VISIBLE);
+        header.setVisibility(settingsOpen ? View.GONE : View.VISIBLE);
+        settings.setVisibility(settingsOpen ? View.VISIBLE : View.GONE);
+        if (settingsOpen) {
+            refreshLocalAdb();
+        }
+        if (scrollToTop) {
+            View scroll = findViewById(R.id.main_scroll);
+            if (scroll != null) {
+                scroll.scrollTo(0, 0);
+            }
+        }
     }
 
     // ---------------------------------------------------------------- share over the internet
@@ -1059,6 +1107,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @SuppressLint("ClickableViewAccessibility")
     private void startMirroring(AdbLauncher.Session session, HostAddress address, ScrcpySessionOptions options) {
         mirroring = true;
+        settingsOpen = false; // back to the main page when the session ends
         videoWidth = 0;
         videoHeight = 0;
         setContentView(R.layout.surface);
@@ -1387,9 +1436,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         if (Build.VERSION.SDK_INT < 33) {
             return;
         }
-        if (mirroring && backCallback == null) {
-            backCallback = BackCallbacks.register(this, this::handleMirrorBack);
-        } else if (!mirroring && backCallback != null) {
+        boolean handleBack = mirroring || settingsOpen;
+        if (handleBack && backCallback == null) {
+            backCallback = BackCallbacks.register(this, this::handleBack);
+        } else if (!handleBack && backCallback != null) {
             BackCallbacks.unregister(this, backCallback);
             backCallback = null;
         }
@@ -1398,10 +1448,19 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     @Override
     @SuppressWarnings("deprecation")
     public void onBackPressed() {
-        if (mirroring) {
-            handleMirrorBack();
+        if (mirroring || settingsOpen) {
+            handleBack();
         } else {
             super.onBackPressed();
+        }
+    }
+
+    /** Back: leave the settings page, or (double press) stop mirroring. */
+    private void handleBack() {
+        if (mirroring) {
+            handleMirrorBack();
+        } else if (settingsOpen) {
+            setSettingsPage(false);
         }
     }
 

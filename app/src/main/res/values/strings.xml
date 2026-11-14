@@ -35,7 +35,7 @@
     <string name="share_starting_tunnel">Starting the Cloudflare tunnel…</string>
     <string name="share_waiting">Got an address, connecting it to Cloudflare…</string>
     <string name="share_online">● Sharing. Give this code to the other phone:</string>
-    <string name="share_adb_off">ADB over Wi-Fi (port 5555) is off on this phone, so it cannot be mirrored. Turn it on first: connect this phone to a computer and run \"adb tcpip 5555\" (it stays on until a reboot), or use the ADB card below if this phone is rooted. Then tap Start sharing again.</string>
+    <string name="share_adb_off">ADB over Wi-Fi (port 5555) is off on this phone, so it cannot be mirrored. Turn it on first: connect this phone to a computer and run \"adb tcpip 5555\" (it stays on until a reboot), or, if this phone is rooted, use Settings (gear, top right) › ADB on this device. Then tap Start sharing again.</string>
     <string name="share_not_bundled">This build does not include cloudflared for this phone\'s processor.</string>
     <string name="share_failed">Could not start sharing: %1$s</string>
     <string name="share_channel">Sharing this phone</string>
@@ -178,6 +178,8 @@
     </string-array>
     <string name="resolution_note">⭐ 480p is recommended: smoothest picture with the least delay and data, especially over mobile data or a share code. Pick a higher size only on fast Wi-Fi.</string>
     <string name="action_clear">Clear</string>
+    <string name="settings_title">Settings</string>
+    <string name="settings_back">Back</string>
     <string name="action_recommended">↺ Use recommended settings</string>
     <string name="recommended_note">Recommended: 480p, 1 Mbps, 30 fps, H.264, audio on both devices.</string>
     <string name="recommended_restored">Recommended settings restored</string>
