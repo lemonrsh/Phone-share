@@ -76,6 +76,11 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     /** The settings page (gear button) is shown instead of the main page. */
     private boolean settingsOpen;
     private static final String STATE_SETTINGS_OPEN = "settings_open";
+    private static final String PREFERENCE_ROOT_SETUP_TIME = "root_setup_time";
+    private static final String PREFERENCE_ROOT_SETUP_DONE = "root_setup_done";
+    private static final String PREFERENCE_ROOT_SETUP_TOTAL = "root_setup_total";
+    /** Last "no root" message from the root setup, shown with the live status. */
+    private String rootSetupError;
 
     @Override
     protected void onSaveInstanceState(Bundle outState) {
@@ -583,7 +588,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         new Thread(() -> {
             final boolean listening = LocalAdb.isListening();
             final java.util.List<String> addresses = LocalAdb.localAddresses();
-            runOnUiThread(() -> showLocalAdbStatus(listening, addresses));
+            runOnUiThread(() -> {
+                showLocalAdbStatus(listening, addresses);
+                renderRootSetupStatus(listening);
+            });
         }, "local-adb-check").start();
     }
 
@@ -678,26 +686,94 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     }
 
     private void showRootSetupResult(LocalAdb.SetupResult setup) {
-        TextView view = findViewById(R.id.text_root_setup_result);
-        if (view == null) {
-            return;
-        }
-        view.setVisibility(View.VISIBLE);
         if (setup.result.noRoot) {
-            view.setText(getString(R.string.root_setup_no_root, setup.result.output));
-            return;
+            rootSetupError = getString(R.string.root_setup_no_root, setup.result.output);
+            return; // refreshLocalAdb() (called next) shows it with the live status
         }
+        rootSetupError = null;
         int done = 0;
-        StringBuilder text = new StringBuilder();
-        for (int i = 0; i < setup.steps.size(); ++i) {
-            if (setup.ok[i]) {
+        for (boolean ok : setup.ok) {
+            if (ok) {
                 done++;
             }
-            text.append(setup.ok[i] ? "✅ " : "❌ ").append(setup.steps.get(i).label).append('\n');
         }
-        text.append('\n').append(getString(setup.adbListening ? R.string.root_setup_adb_on : R.string.root_setup_adb_off));
-        view.setText(text);
+        getPreferences().edit()
+                .putLong(PREFERENCE_ROOT_SETUP_TIME, System.currentTimeMillis())
+                .putInt(PREFERENCE_ROOT_SETUP_DONE, done)
+                .putInt(PREFERENCE_ROOT_SETUP_TOTAL, setup.steps.size())
+                .apply();
         Toast.makeText(this, getString(R.string.root_setup_done, done, setup.steps.size()), Toast.LENGTH_LONG).show();
+    }
+
+    /**
+     * The root box shows what is really set up right now (checked live every time Settings is
+     * shown), so after a force stop or reboot it says "Everything is set up" instead of asking
+     * again. Only what Android lets an app read is checked.
+     */
+    private void renderRootSetupStatus(boolean adbListening) {
+        TextView view = findViewById(R.id.text_root_setup_result);
+        Button button = findViewById(R.id.button_root_setup);
+        if (view == null || button == null) {
+            return;
+        }
+        StringBuilder lines = new StringBuilder();
+        boolean all = true;
+        all &= addCheck(lines, getString(R.string.root_check_adb_wifi), adbListening);
+        all &= addCheck(lines, getString(R.string.root_check_dev_options),
+                readGlobal(Settings.Global.DEVELOPMENT_SETTINGS_ENABLED, 1));
+        all &= addCheck(lines, getString(R.string.root_check_adb), readGlobal(Settings.Global.ADB_ENABLED, 1));
+        if (Build.VERSION.SDK_INT >= 30) {
+            all &= addCheck(lines, getString(R.string.root_check_remember), readGlobal("adb_allowed_connection_time", 0));
+        }
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.M) {
+            all &= addCheck(lines, getString(R.string.root_check_overlay), Settings.canDrawOverlays(this));
+            android.os.PowerManager power = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            all &= addCheck(lines, getString(R.string.root_check_battery),
+                    power == null ? null : power.isIgnoringBatteryOptimizations(getPackageName()));
+        }
+        if (Build.VERSION.SDK_INT >= 33) {
+            all &= addCheck(lines, getString(R.string.root_check_notifications),
+                    checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED);
+        }
+
+        StringBuilder text = new StringBuilder(getString(all ? R.string.root_status_all_done : R.string.root_status_missing));
+        text.append("\n\n").append(lines.toString().trim());
+        long last = getPreferences().getLong(PREFERENCE_ROOT_SETUP_TIME, 0);
+        if (last > 0) {
+            String when = android.text.format.DateFormat.getDateFormat(this).format(new java.util.Date(last)) + " "
+                    + android.text.format.DateFormat.getTimeFormat(this).format(new java.util.Date(last));
+            text.append("\n\n").append(getString(R.string.root_status_last_run,
+                    getPreferences().getInt(PREFERENCE_ROOT_SETUP_DONE, 0),
+                    getPreferences().getInt(PREFERENCE_ROOT_SETUP_TOTAL, 0), when));
+        }
+        if (rootSetupError != null) {
+            text.append("\n\n").append(rootSetupError);
+        }
+        view.setVisibility(View.VISIBLE);
+        view.setText(text);
+        button.setText(all ? R.string.root_setup_button_again : R.string.root_setup_button);
+    }
+
+    /** Appends "✅ label" or "❌ label"; {@code ok == null} (cannot be checked) adds nothing. */
+    private static boolean addCheck(StringBuilder lines, String label, Boolean ok) {
+        if (ok == null) {
+            return true;
+        }
+        lines.append(ok ? "✅ " : "❌ ").append(label).append('\n');
+        return ok;
+    }
+
+    /** Whether a Settings.Global integer equals {@code expected}; null when it cannot be read. */
+    private Boolean readGlobal(String name, long expected) {
+        try {
+            String value = Settings.Global.getString(getContentResolver(), name);
+            if (value == null) {
+                return Boolean.FALSE; // never set: Android's default (off / 7-day expiry)
+            }
+            return Long.parseLong(value.trim()) == expected;
+        } catch (RuntimeException e) {
+            return null; // hidden setting not readable by apps on this Android version
+        }
     }
 
     private void setLocalAdbButtonsEnabled(boolean enabled) {
@@ -1435,6 +1511,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         super.onResume();
         resumed = true;
         incomingSessions.start();
+        if (settingsOpen && !mirroring) {
+            refreshLocalAdb(); // e.g. back from Android settings: show what is set up now
+        }
         if (resumeStartupPrompts) {
             resumeStartupPrompts = false;
             if (!needsOverlayPermission()) {

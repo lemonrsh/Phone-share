@@ -63,6 +63,17 @@
     <string name="root_setup_title">⚡ Set up everything with root</string>
     <string name="root_setup_note">Rooted phones only. One tap turns on developer options, ADB and ADB over Wi-Fi on port 5555 (kept after reboot), allows the floating window and notifications, removes battery restrictions and stops Android from forgetting allowed phones after 7 days. The other phone still needs your Allow the first time.</string>
     <string name="root_setup_button">Set up everything (needs root)</string>
+    <string name="root_setup_button_again">Run setup again (needs root)</string>
+    <string name="root_status_all_done">✅ Everything is set up. Nothing to do: this stays after force stop and reboot.</string>
+    <string name="root_status_missing">Not set up yet (or turned off since). Tap the button to fix:</string>
+    <string name="root_status_last_run">Last root setup: %1$d of %2$d steps done · %3$s</string>
+    <string name="root_check_adb_wifi">ADB over Wi-Fi on port 5555</string>
+    <string name="root_check_dev_options">Developer options on</string>
+    <string name="root_check_adb">USB / ADB debugging on</string>
+    <string name="root_check_remember">Remember allowed phones (no 7-day expiry)</string>
+    <string name="root_check_overlay">Floating window (display over other apps)</string>
+    <string name="root_check_battery">No battery restrictions</string>
+    <string name="root_check_notifications">Notifications</string>
     <string name="root_setup_working">Working… accept the root prompt if one appears.</string>
     <string name="root_setup_no_root">❌ Root is not available: %1$s\n\nThis needs a rooted phone (Magisk, KernelSU…). Without root, use the steps shown by Turn on 5555.</string>
     <string name="root_setup_done">Setup finished: %1$d of %2$d steps done.</string>
