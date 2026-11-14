@@ -111,8 +111,27 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         findViewById(R.id.button_connection_log).setOnClickListener(view -> openLog(LogActivity.SECTION_CONNECTION_LOG));
         findViewById(R.id.button_app_log).setOnClickListener(view -> openLog(LogActivity.SECTION_APP_LOG));
         new OptionsPanel(this, getPreferences(), findViewById(R.id.options_container)).build();
+        // Both option boxes start collapsed; tapping a title shows or hides its options.
+        setupCollapsible(R.id.header_normal, R.id.body_normal, R.string.section_scrcpy);
+        setupCollapsible(R.id.header_advanced, R.id.options_container, R.string.options_more_title);
         setupLocalAdbCard();
         updateSessionStatusView();
+    }
+
+    private void setupCollapsible(int headerId, int bodyId, int titleRes) {
+        final TextView header = findViewById(headerId);
+        final View body = findViewById(bodyId);
+        if (header == null || body == null) {
+            return;
+        }
+        body.setVisibility(View.GONE);
+        final String title = getString(titleRes);
+        header.setText("▸  " + title);
+        header.setOnClickListener(view -> {
+            boolean open = body.getVisibility() != View.VISIBLE;
+            body.setVisibility(open ? View.VISIBLE : View.GONE);
+            header.setText((open ? "▾  " : "▸  ") + title);
+        });
     }
 
     // ---------------------------------------------------------------- connection status
