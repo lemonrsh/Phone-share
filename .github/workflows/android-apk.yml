@@ -55,7 +55,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: app/src/main/jniLibs
-          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-v1
+          key: cloudflared-android-${{ env.CLOUDFLARED_VERSION }}-static-${{ hashFiles('tools/cloudflared/**') }}
 
       - name: Check out cloudflared
         if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
@@ -76,32 +76,23 @@ jobs:
         if: ${{ steps.cloudflared-cache.outputs.cache-hit != 'true' }}
         run: |
           set -euo pipefail
-          NDK="${ANDROID_NDK_LATEST_HOME:-${ANDROID_NDK_HOME:-}}"
-          TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          if [[ ! -d "$TOOLCHAIN" ]]; then
-            ndk_package=$(sdkmanager --list 2>/dev/null | grep -oE 'ndk;[0-9][0-9.]*[0-9]' | sort -V | tail -n 1)
-            echo "Installing $ndk_package"
-            yes | sdkmanager "$ndk_package" >/dev/null
-            NDK="$ANDROID_SDK_ROOT/ndk/${ndk_package#ndk;}"
-            TOOLCHAIN="$NDK/toolchains/llvm/prebuilt/linux-x86_64/bin"
-          fi
-          test -d "$TOOLCHAIN" || { echo "Android NDK not found ($NDK)" >&2; exit 1; }
-          echo "Using NDK $NDK"
           OUT="$GITHUB_WORKSPACE/app/src/main/jniLibs"
+          cp tools/cloudflared/android_dns.go .cloudflared-src/cmd/cloudflared/zz_scrcpy_android_dns.go
           cd .cloudflared-src
-          # GOOS=android with cgo (like Termux) so that DNS and certificates use Android's own.
+          # A static Linux binary (no cgo): it does not depend on Android's dynamic linker or
+          # Bionic's TLS layout, so it starts on every Android version. GOOS=android builds
+          # crashed at startup (SIGSEGV) on Android 17. DNS: see tools/cloudflared/android_dns.go.
           build() {
-            local abi=$1 goarch=$2 cc=$3
+            local abi=$1 goarch=$2
             mkdir -p "$OUT/$abi"
-            env CGO_ENABLED=1 GOOS=android GOARCH="$goarch" ${4:+GOARM=$4} CC="$TOOLCHAIN/$cc" \
-              go build -trimpath \
-              -ldflags "-s -w -X main.Version=$CLOUDFLARED_VERSION -extldflags '-Wl,-z,max-page-size=16384'" \
+            env CGO_ENABLED=0 GOOS=linux GOARCH="$goarch" ${3:+GOARM=$3} \
+              go build -trimpath -ldflags "-s -w -X main.Version=$CLOUDFLARED_VERSION" \
               -o "$OUT/$abi/libcloudflared.so" ./cmd/cloudflared
             file "$OUT/$abi/libcloudflared.so" || true
             ls -l "$OUT/$abi/libcloudflared.so"
           }
-          build arm64-v8a arm64 aarch64-linux-android21-clang
-          build armeabi-v7a arm armv7a-linux-androideabi21-clang 7
+          build arm64-v8a arm64
+          build armeabi-v7a arm 7
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6.4.1

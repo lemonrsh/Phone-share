@@ -198,6 +198,12 @@ public class CloudTunnelTest {
     }
 
     @Test
+    public void explainsSignalExitCodes() {
+        assertTrue(Cloudflared.describeExit(139).contains("SIGSEGV"));
+        assertEquals("", Cloudflared.describeExit(1));
+    }
+
+    @Test
     public void pinsAreSixDigits() {
         for (int i = 0; i < 50; ++i) {
             assertTrue(ShareService.newPin().matches("[0-9]{6}"));

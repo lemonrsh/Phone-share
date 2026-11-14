@@ -9,6 +9,8 @@
     <!-- "Share this phone over the internet" (Cloudflare test): keeps the tunnel running. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <!-- Reads the phone's DNS servers for cloudflared (Android has no /etc/resolv.conf). -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- Only used for the floating window's foreground-service notification. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 

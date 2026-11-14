@@ -1,19 +1,30 @@
 package org.las2mile.scrcpy;
 
 import android.content.Context;
+import android.net.ConnectivityManager;
+import android.net.LinkProperties;
+import android.net.Network;
+import android.os.Build;
 
 import java.io.BufferedReader;
 import java.io.File;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.net.InetAddress;
+import java.util.LinkedHashSet;
+import java.util.Set;
 import java.nio.charset.StandardCharsets;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Runs Cloudflare's {@code cloudflared} connector (bundled as {@code libcloudflared.so}, built
- * for Android by CI, so that Android extracts it to the executable native-library folder) as a
- * TryCloudflare quick tunnel: no account, a new random trycloudflare.com address every time.
+ * Runs Cloudflare's {@code cloudflared} connector (bundled as {@code libcloudflared.so}, so that
+ * Android extracts it to the executable native-library folder) as a TryCloudflare quick tunnel:
+ * no account, a new random trycloudflare.com address every time.
+ *
+ * <p>The binary is a static Linux build (see the CI workflow). It gets the phone's DNS servers
+ * in {@code SCRCPY_DNS} (tools/cloudflared/android_dns.go) and Android's CA certificates in
+ * {@code SSL_CERT_DIR}.
  */
 final class Cloudflared {
     private static final Pattern URL = Pattern.compile("https://([a-z0-9-]+\\.trycloudflare\\.com)");
@@ -68,6 +79,10 @@ final class Cloudflared {
         builder.directory(home);
         builder.environment().put("HOME", home.getAbsolutePath());
         builder.environment().put("TMPDIR", context.getCacheDir().getAbsolutePath());
+        builder.environment().put("SSL_CERT_DIR", "/apex/com.android.conscrypt/cacerts:/system/etc/security/cacerts");
+        String dns = dnsServers(context);
+        builder.environment().put("SCRCPY_DNS", dns);
+        DiagnosticLog.i("cloudflared", "DNS servers: " + (dns.isEmpty() ? "(none found, using 1.1.1.1 / 8.8.8.8)" : dns));
         builder.redirectErrorStream(true);
         DiagnosticLog.i("cloudflared", "Starting quick tunnel to http://127.0.0.1:" + localPort);
         stopping = false;
@@ -101,11 +116,63 @@ final class Cloudflared {
             } catch (InterruptedException e) {
                 code = -1;
             }
-            DiagnosticLog.i("cloudflared", "Exited with code " + code);
-            listener.onExit(stopping ? null : "cloudflared stopped (exit code " + code + "). See Logs → Connection log.");
+            DiagnosticLog.i("cloudflared", "Exited with code " + code + describeExit(code));
+            listener.onExit(stopping ? null : "cloudflared stopped (exit code " + code + describeExit(code)
+                    + "). See Logs → Connection log.");
         }, "cloudflared-log");
         reader.setDaemon(true);
         reader.start();
+    }
+
+    static String describeExit(int code) {
+        if (code > 128 && code < 160) {
+            int signal = code - 128;
+            String name = signal == 11 ? "SIGSEGV, crashed" : signal == 9 ? "SIGKILL, killed by Android"
+                    : signal == 6 ? "SIGABRT" : signal == 31 ? "SIGSYS, blocked system call" : "signal " + signal;
+            return ": " + name;
+        }
+        return "";
+    }
+
+    /** The active network's DNS servers, comma separated (may be empty). */
+    @SuppressWarnings("deprecation")
+    static String dnsServers(Context context) {
+        Set<String> servers = new LinkedHashSet<>();
+        try {
+            ConnectivityManager manager = (ConnectivityManager) context.getSystemService(Context.CONNECTIVITY_SERVICE);
+            if (manager != null) {
+                Network[] networks;
+                if (Build.VERSION.SDK_INT >= 23 && manager.getActiveNetwork() != null) {
+                    networks = new Network[] {manager.getActiveNetwork()};
+                } else {
+                    networks = manager.getAllNetworks();
+                }
+                for (Network network : networks) {
+                    LinkProperties properties = manager.getLinkProperties(network);
+                    if (properties == null) {
+                        continue;
+                    }
+                    for (InetAddress address : properties.getDnsServers()) {
+                        String text = address.getHostAddress();
+                        int scope = text.indexOf('%');
+                        if (scope >= 0) {
+                            text = text.substring(0, scope);
+                        }
+                        servers.add(text.indexOf(':') >= 0 ? "[" + text + "]:53" : text + ":53");
+                    }
+                }
+            }
+        } catch (RuntimeException e) {
+            DiagnosticLog.e("cloudflared", "Could not read the DNS servers", e);
+        }
+        StringBuilder out = new StringBuilder();
+        for (String server : servers) {
+            if (out.length() > 0) {
+                out.append(',');
+            }
+            out.append(server);
+        }
+        return out.toString();
     }
 
     synchronized void stop() {
