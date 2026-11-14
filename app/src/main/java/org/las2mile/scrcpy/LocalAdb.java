@@ -117,6 +117,124 @@ final class LocalAdb {
         return runRoot(disableCommand());
     }
 
+    // ---------------------------------------------------------------- one-tap root setup
+
+    /** One step of {@link #rootSetup}: a label for the user and the root shell command. */
+    static final class SetupStep {
+        final String label;
+        final String command;
+
+        SetupStep(String label, String command) {
+            this.label = label;
+            this.command = command;
+        }
+    }
+
+    /** Outcome of {@link #rootSetup}: per-step success, or {@link Result#noRoot}. */
+    static final class SetupResult {
+        final Result result;
+        final List<SetupStep> steps;
+        final boolean[] ok;
+        final boolean adbListening;
+
+        SetupResult(Result result, List<SetupStep> steps, boolean[] ok, boolean adbListening) {
+            this.result = result;
+            this.steps = steps;
+            this.ok = ok;
+            this.adbListening = adbListening;
+        }
+    }
+
+    /**
+     * Everything this app can use, set up with root: developer options and ADB on, ADB over
+     * Wi-Fi on port 5555 (kept after reboots), floating-window and notification permissions,
+     * no battery restrictions. ADB authorizations are never removed or bypassed: the other
+     * phone still needs the user's "Allow" the first time.
+     */
+    static List<SetupStep> rootSetupSteps(String packageName, int sdk) {
+        if (packageName == null || !packageName.matches("[A-Za-z0-9._]+")) {
+            throw new IllegalArgumentException("Invalid package name: " + packageName);
+        }
+        List<SetupStep> steps = new ArrayList<>();
+        steps.add(new SetupStep("Developer options on", "settings put global development_settings_enabled 1"));
+        steps.add(new SetupStep("USB / ADB debugging on", "settings put global adb_enabled 1"));
+        if (sdk >= 30) {
+            // Android 11+ forgets ADB authorizations after 7 days without use; 0 = never.
+            steps.add(new SetupStep("Remember allowed phones (no 7-day expiry)",
+                    "settings put global adb_allowed_connection_time 0"));
+        }
+        if (sdk >= 23) {
+            steps.add(new SetupStep("Floating window (display over other apps)",
+                    "appops set " + packageName + " SYSTEM_ALERT_WINDOW allow"));
+        }
+        if (sdk >= 33) {
+            steps.add(new SetupStep("Notifications", "pm grant " + packageName + " android.permission.POST_NOTIFICATIONS"));
+        }
+        if (sdk >= 23) {
+            steps.add(new SetupStep("No battery restrictions", "dumpsys deviceidle whitelist +" + packageName));
+        }
+        if (sdk >= 28) {
+            steps.add(new SetupStep("Allowed to run in the background",
+                    "appops set " + packageName + " RUN_IN_BACKGROUND allow; appops set " + packageName
+                            + " RUN_ANY_IN_BACKGROUND allow"));
+        } else if (sdk >= 24) {
+            steps.add(new SetupStep("Allowed to run in the background",
+                    "appops set " + packageName + " RUN_IN_BACKGROUND allow"));
+        }
+        // Last: restarting adbd briefly drops ADB connections.
+        steps.add(new SetupStep("ADB over Wi-Fi on port " + PORT + " (kept after reboot)", enableCommand(true)));
+        return steps;
+    }
+
+    /** One root shell script that runs every step and prints STEP:&lt;index&gt;:OK or FAIL for each. */
+    static String rootSetupScript(List<SetupStep> steps) {
+        StringBuilder script = new StringBuilder();
+        for (int i = 0; i < steps.size(); ++i) {
+            script.append("if ( ").append(steps.get(i).command).append(" ) >/dev/null 2>&1; then echo STEP:")
+                    .append(i).append(":OK; else echo STEP:").append(i).append(":FAIL; fi; ");
+        }
+        return script.toString().trim();
+    }
+
+    /** Parses the STEP lines printed by {@link #rootSetupScript}. Missing steps count as failed. */
+    static boolean[] parseSetupOutput(String output, int count) {
+        boolean[] ok = new boolean[count];
+        if (output == null) {
+            return ok;
+        }
+        for (String line : output.split("\\r?\\n")) {
+            String[] parts = line.trim().split(":");
+            if (parts.length == 3 && "STEP".equals(parts[0])) {
+                try {
+                    int index = Integer.parseInt(parts[1]);
+                    if (index >= 0 && index < count) {
+                        ok[index] = "OK".equals(parts[2]);
+                    }
+                } catch (NumberFormatException ignored) {
+                    // Not one of ours.
+                }
+            }
+        }
+        return ok;
+    }
+
+    /** Runs every setup step with root (one prompt), then waits for port 5555. Blocks. */
+    static SetupResult rootSetup(String packageName, int sdk) {
+        List<SetupStep> steps = rootSetupSteps(packageName, sdk);
+        Result result = runRoot(rootSetupScript(steps));
+        boolean[] ok = parseSetupOutput(result.output, steps.size());
+        if (result.noRoot) {
+            return new SetupResult(result, steps, ok, isListening());
+        }
+        long deadline = SystemClock.uptimeMillis() + 8_000;
+        boolean listening = isListening();
+        while (!listening && SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(400);
+            listening = isListening();
+        }
+        return new SetupResult(result, steps, ok, listening);
+    }
+
     /** Runs {@code command} with su. {@link Result#noRoot} is set when su is missing or denied. */
     static Result runRoot(String command) {
         Process process;
