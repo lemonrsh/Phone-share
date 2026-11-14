@@ -49,7 +49,7 @@ jobs:
         continue-on-error: true
         run: |
           set -o pipefail
-          ./gradlew --no-daemon testDebugUnitTest assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
+          ./gradlew --no-daemon --console=plain testDebugUnitTest assembleDebug assembleRelease --stacktrace 2>&1 | tee "$RUNNER_TEMP/gradle-build.log"
 
       - name: Report Gradle failure details
         if: ${{ steps.gradle-build.outcome == 'failure' }}
@@ -59,10 +59,12 @@ jobs:
           from pathlib import Path
 
           log = Path(os.environ['RUNNER_TEMP'], 'gradle-build.log').read_text(errors='replace')
-          details = '\n'.join(log.splitlines()[-50:])[-8000:]
+          lines = log.splitlines()
+          diagnostics = [line for line in lines if any(token in line.lower() for token in ('what went wrong', 'caused by:', 'could not', 'error:', 'failed to'))]
+          details = '\n'.join(diagnostics[-12:] + ['--- last output ---'] + lines[-40:])[-8000:]
           with open(os.environ['GITHUB_STEP_SUMMARY'], 'a') as summary:
-              summary.write('### Gradle build failure (last output)\n\n```text\n' + details + '\n```\n')
-          message = ('Gradle build failed. Last output: ' + details).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
+              summary.write('### Gradle build failure (diagnostics and last output)\n\n```text\n' + details + '\n```\n')
+          message = ('Gradle build failed. Diagnostics and last output: ' + details).replace('%', '%25').replace('\r', '%0D').replace('\n', '%0A')
           print('::error title=Gradle build failure::' + message)
           PY
           exit 1
