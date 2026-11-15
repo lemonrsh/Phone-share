@@ -100,7 +100,14 @@ final class WsBridgeServer {
             boolean upgrade = "websocket".equalsIgnoreCase(head.header("Upgrade"));
             String key = head.header("Sec-WebSocket-Key");
             if (!upgrade || key.isEmpty()) {
-                respond(out, 200, "OK", null); // health check / browser visit
+                if (target.isEmpty() || "connect".equals(target)) {
+                    // The share link opened in a browser: a page that opens Phone Share.
+                    respondPage(out, ShareLink.landingPage());
+                } else if ("favicon.ico".equals(target)) {
+                    respond(out, 404, "Not Found", "No icon");
+                } else {
+                    respond(out, 200, "OK", null); // health check
+                }
                 return;
             }
             if (!pinMatches(queryParam(query, "pin"))) {
@@ -176,6 +183,22 @@ final class WsBridgeServer {
         head.append("Content-Length: ").append(bytes.length).append("\r\n");
         head.append("Connection: close\r\n\r\n");
         out.write(head.toString().getBytes(StandardCharsets.UTF_8));
+        out.write(bytes);
+        out.flush();
+    }
+
+    private static void respondPage(OutputStream out, String html) throws IOException {
+        byte[] bytes = html.getBytes(StandardCharsets.UTF_8);
+        String head = "HTTP/1.1 200 OK\r\n"
+                + "Content-Type: text/html; charset=utf-8\r\n"
+                + "Content-Length: " + bytes.length + "\r\n"
+                + "Cache-Control: no-store\r\n"
+                + "Referrer-Policy: no-referrer\r\n"
+                + "X-Content-Type-Options: nosniff\r\n"
+                + "X-Robots-Tag: noindex\r\n"
+                + "Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'\r\n"
+                + "Connection: close\r\n\r\n";
+        out.write(head.getBytes(StandardCharsets.UTF_8));
         out.write(bytes);
         out.flush();
     }

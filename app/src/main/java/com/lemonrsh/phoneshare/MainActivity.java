@@ -138,9 +138,68 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         SessionState.addListener(this);
         ShareService.addListener(shareListener);
         RunningNotification.setStopHandler(stopFromNotification);
-        if (savedInstanceState == null) {
-            runStartupPrompts();
+        if (savedInstanceState == null && !handleShareLink(getIntent())) {
+            runStartupPrompts(); // (opened from a share link: the start-up questions wait)
         }
+    }
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        handleShareLink(intent);
+    }
+
+    /**
+     * Opened from a share link (phoneshare://connect?host=…&pin=… from the link's web page, or the
+     * https link itself): fills in the address and asks "Connect to this phone?". Returns true
+     * when the intent was a link (handled, even if invalid).
+     */
+    private boolean handleShareLink(Intent intent) {
+        if (intent == null || !Intent.ACTION_VIEW.equals(intent.getAction()) || intent.getData() == null) {
+            return false;
+        }
+        String link = intent.getDataString();
+        intent.setData(null); // handle it once (e.g. not again after a recreate)
+        final String code = ShareLink.codeFrom(link);
+        DiagnosticLog.i("app", "Opened from a share link: " + (code == null ? "invalid" : "ok"));
+        if (code == null) {
+            Toast.makeText(this, R.string.link_invalid, Toast.LENGTH_LONG).show();
+            return true;
+        }
+        if (mirroring || launcher != null || isSessionActive()) {
+            Toast.makeText(this, R.string.link_busy, Toast.LENGTH_LONG).show();
+            return true;
+        }
+        if (!isCloudflareEdition()) {
+            new AlertDialog.Builder(this)
+                    .setTitle(R.string.link_connect_title)
+                    .setMessage(R.string.error_tunnel_needs_cloudflared)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return true;
+        }
+        if (settingsOpen) {
+            setSettingsPage(false);
+        }
+        EditText host = findViewById(R.id.editText_server_host);
+        if (host != null) {
+            host.setText(code);
+        }
+        getPreferences().edit().putString("Server Address", code).apply();
+        String name = code.substring(0, code.indexOf('#'));
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.link_connect_title)
+                .setMessage(getString(R.string.link_connect_message, name))
+                .setPositiveButton(R.string.link_connect_yes, (dialog, which) -> {
+                    Button start = findViewById(R.id.button_start);
+                    if (start != null && !mirroring && launcher == null && !isSessionActive()) {
+                        onStartClicked(start);
+                    }
+                })
+                .setNegativeButton(R.string.link_connect_no, null)
+                .show();
+        return true;
     }
 
     /** Stop in the "Phone Share is running" notification, for a session shown by this activity. */
@@ -401,7 +460,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
                 return;
             }
             Intent send = new Intent(Intent.ACTION_SEND).setType("text/plain")
-                    .putExtra(Intent.EXTRA_TEXT, getString(R.string.share_send_text, code));
+                    .putExtra(Intent.EXTRA_TEXT, code); // just the link
             try {
                 startActivity(Intent.createChooser(send, getString(R.string.share_send)));
             } catch (RuntimeException e) {
