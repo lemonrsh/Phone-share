@@ -92,6 +92,14 @@
     <string name="incoming_title">%1$s is connected to this phone</string>
     <string name="incoming_detail">IP %1$s · since %2$s</string>
     <string name="incoming_unknown_name">Another device</string>
+    <string name="incoming_title_many">%1$d devices are connected to this phone</string>
+    <string name="incoming_notification_text">It can see and control your screen. IP %1$s · since %2$s</string>
+    <string name="incoming_notification_text_many">%1$s can see and control your screen.</string>
+    <string name="incoming_channel">Device connected to this phone</string>
+    <string name="incoming_channel_description">Shown while another device mirrors and controls this phone, with a Disconnect button.</string>
+    <string name="notification_disconnect">Disconnect</string>
+    <string name="incoming_disconnected_all">Disconnected</string>
+    <string name="incoming_nothing_connected">Nothing is connected any more</string>
     <string name="incoming_disconnecting">Disconnecting…</string>
     <string name="toast_incoming_disconnected">%1$s was disconnected</string>
     <string name="switch_audio_dup">Play audio on both devices</string>

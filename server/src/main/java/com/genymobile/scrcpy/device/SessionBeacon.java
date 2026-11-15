@@ -23,21 +23,35 @@ import java.nio.charset.StandardCharsets;
  *     <li>{@code DISCONNECT} answers {@code OK} and ends the session</li>
  * </ul>
  * Several sessions can run at once, so the first free port of a small range is used.
+ *
+ * <p>It also tells the Phone Share app on this phone (if installed) when the session starts and
+ * ends, with an explicit broadcast sent through {@code am} as the shell user, so that the app
+ * shows a "connected" notification with a Disconnect button even when it is not open. The
+ * app's receiver requires the DUMP permission, which the shell has and normal apps cannot get.
  */
 public final class SessionBeacon {
 
     public static final int FIRST_PORT = 27200;
     public static final int PORT_COUNT = 5;
 
+    private static final String APP_PACKAGE = "com.lemonrsh.phoneshare";
+    private static final String APP_RECEIVER = APP_PACKAGE + "/.IncomingSessionReceiver";
+    private static final String ACTION_PREFIX = APP_PACKAGE + ".action.";
+    // Intent.FLAG_INCLUDE_STOPPED_PACKAGES | Intent.FLAG_RECEIVER_FOREGROUND
+    private static final String BROADCAST_FLAGS = String.valueOf(0x00000020 | 0x10000000);
+    private static final long NOTIFY_END_WAIT_MS = 3000;
+
     private final ServerSocket serverSocket;
+    private final int port;
     private final String clientIp;
     private final String clientName;
     private final long startMillis = System.currentTimeMillis();
     private final Runnable onDisconnect;
     private final Thread thread;
 
-    private SessionBeacon(ServerSocket serverSocket, String clientIp, String clientName, Runnable onDisconnect) {
+    private SessionBeacon(ServerSocket serverSocket, int port, String clientIp, String clientName, Runnable onDisconnect) {
         this.serverSocket = serverSocket;
+        this.port = port;
         this.clientIp = clientIp == null ? "" : clientIp;
         this.clientName = clientName == null ? "" : clientName;
         this.onDisconnect = onDisconnect;
@@ -53,9 +67,10 @@ public final class SessionBeacon {
             try {
                 socket = new ServerSocket();
                 socket.bind(new InetSocketAddress(InetAddress.getByName("127.0.0.1"), port), 4);
-                SessionBeacon beacon = new SessionBeacon(socket, clientIp, clientName, onDisconnect);
+                SessionBeacon beacon = new SessionBeacon(socket, port, clientIp, clientName, onDisconnect);
                 beacon.thread.start();
                 Ln.i("Session beacon listening on 127.0.0.1:" + port);
+                beacon.notifyApp("SESSION_STARTED");
                 return beacon;
             } catch (IOException | RuntimeException e) {
                 if (socket != null) {
@@ -105,6 +120,55 @@ public final class SessionBeacon {
             serverSocket.close();
         } catch (IOException ignored) {
             // ignore
+        }
+        // Wait a little so that the app removes its notification before this process exits.
+        Thread thread = notifyApp("SESSION_ENDED");
+        try {
+            thread.join(NOTIFY_END_WAIT_MS);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** Sends the broadcast in the background; a phone without the app just ignores it. */
+    private Thread notifyApp(String action) {
+        final String[] command = {
+                "/system/bin/am", "broadcast",
+                "-n", APP_RECEIVER,
+                "-a", ACTION_PREFIX + action,
+                "-f", BROADCAST_FLAGS,
+                "--ei", "port", String.valueOf(port),
+                "--el", "start", String.valueOf(startMillis),
+                "--es", "ip", clientIp.isEmpty() ? "-" : clean(clientIp),
+                "--es", "name", clientName.isEmpty() ? "-" : clean(clientName),
+        };
+        Thread thread = new Thread(() -> {
+            try {
+                Process process = Runtime.getRuntime().exec(command);
+                process.getOutputStream().close();
+                drain(process);
+                int code = process.waitFor();
+                Ln.d("Told the app on this phone: " + action + " (am exit " + code + ")");
+            } catch (IOException | RuntimeException e) {
+                Ln.w("Could not tell the app on this phone: " + e.getMessage());
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }, "session-notify");
+        thread.setDaemon(true);
+        thread.start();
+        return thread;
+    }
+
+    private static void drain(Process process) throws IOException {
+        byte[] buffer = new byte[1024];
+        java.io.InputStream out = process.getInputStream();
+        while (out.read(buffer) != -1) {
+            // discard
+        }
+        java.io.InputStream err = process.getErrorStream();
+        while (err.read(buffer) != -1) {
+            // discard
         }
     }
 }

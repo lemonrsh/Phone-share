@@ -19,6 +19,7 @@ Every release is built from the same source in two editions (Gradle product flav
 
 - **Start-up floating window question**: if Android's "Display over other apps" permission is missing, the app asks once per launch: **Go to settings** (opens the permission page for Phone Share) or **Do it later**. It is needed for the floating window and auto-float.
 - **Start-up ADB question** (after the floating window question): when ADB over Wi-Fi (port 5555) is off on this phone, the app asks once per launch: **Enable ADB** (one tap with root, otherwise it shows how to turn it on) or **Nah, I just want to control another phone**, which just opens the app. Tick **Don't ask again** to stop the question.
+- **"Connected to this phone" notification on the shared phone** (r21): while another device mirrors this phone, this phone shows a notification that stays for the whole session ("Pixel 8 is connected to this phone · It can see and control your screen"), with a **Disconnect** button that ends the session right away. It goes away by itself when the session ends. Needs Phone Share r21+ installed on both phones (no root); on Android 13+ allow notifications (the app asks when you turn on ADB 5555 or Cloudflare sharing).
 - **"Phone Share is running" notification** with a **Stop** button whenever a session runs, full screen or in the floating window. On Android 13+ the app asks for the notification permission the first time you tap Connect.
 
 - Full-screen mirroring or a YouTube-style floating player (see below).

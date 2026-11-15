@@ -6,6 +6,8 @@
     <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- "<device> is connected to this phone" while another device mirrors this one. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <!-- Cloudflare sharing permissions are added by src/cloudflared/AndroidManifest.xml. -->
     <!-- "Phone Share is running" notifications (floating window and full-screen sessions). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -44,6 +46,34 @@
             android:enabled="true"
             android:exported="false"
             android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Told by the scrcpy server on this phone (running as the shell user) that another
+             device connected or left. DUMP: only the shell/system can send it, not other apps. -->
+        <receiver
+            android:name=".IncomingSessionReceiver"
+            android:exported="true"
+            android:permission="android.permission.DUMP">
+            <intent-filter>
+                <action android:name="com.lemonrsh.phoneshare.action.SESSION_STARTED" />
+                <action android:name="com.lemonrsh.phoneshare.action.SESSION_ENDED" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Disconnect button of the "connected to this phone" notification. -->
+        <receiver
+            android:name=".IncomingDisconnectReceiver"
+            android:exported="false" />
+
+        <!-- Keeps the "connected to this phone" notification while a session runs. -->
+        <service
+            android:name=".IncomingSessionService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="Shows the user that another device is mirroring and controlling this phone, with a Disconnect button" />
+        </service>
 
         <!-- Stop button of the "Phone Share is running" notification. -->
         <receiver

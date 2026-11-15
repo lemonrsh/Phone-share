@@ -130,6 +130,7 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         incomingSessions = new IncomingSessions(sessions -> {
             incoming = sessions;
             renderIncomingSessions();
+            syncIncomingNotification(sessions);
         });
         // Stay on the settings page when the activity is recreated (e.g. after switching dark mode).
         settingsOpen = savedInstanceState != null && savedInstanceState.getBoolean(STATE_SETTINGS_OPEN, false);
@@ -371,6 +372,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             ShareService.Phase phase = ShareService.phase();
             boolean active = phase == ShareService.Phase.STARTING || phase == ShareService.Phase.WAITING
                     || phase == ShareService.Phase.ONLINE;
+            if (!active) {
+                requestNotificationPermission();
+            }
             Intent intent = new Intent(this, ShareService.class)
                     .setAction(active ? ShareService.ACTION_STOP : ShareService.ACTION_START);
             try {
@@ -462,6 +466,25 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
                 });
             });
             container.addView(item);
+        }
+    }
+
+    /**
+     * The app is open, so the "connected to this phone" service may start now if Android did not
+     * allow it in the background; a notification left over from a killed session is removed.
+     */
+    private void syncIncomingNotification(java.util.List<IncomingSessions.Session> sessions) {
+        if (sessions.isEmpty()) {
+            if (!IncomingSessionService.isRunning()) {
+                IncomingNotifier.cancel(this);
+            }
+            return;
+        }
+        if (!IncomingSessionService.refresh(null) && resumed) {
+            requestNotificationPermission();
+            if (!IncomingSessionService.start(this, sessions.get(0))) {
+                IncomingNotifier.show(this, sessions);
+            }
         }
     }
 
@@ -572,7 +595,10 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         Switch persist = findViewById(R.id.switch_local_adb_persist);
         persist.setChecked(getPreferences().getBoolean(PREFERENCE_LOCAL_ADB_PERSIST, false));
         bindSwitch(persist, PREFERENCE_LOCAL_ADB_PERSIST);
-        findViewById(R.id.button_local_adb_on).setOnClickListener(view -> changeLocalAdb(true));
+        findViewById(R.id.button_local_adb_on).setOnClickListener(view -> {
+            requestNotificationPermission(); // for "<device> is connected to this phone"
+            changeLocalAdb(true);
+        });
         findViewById(R.id.button_local_adb_off).setOnClickListener(view -> changeLocalAdb(false));
         findViewById(R.id.button_local_adb_check).setOnClickListener(view -> refreshLocalAdb());
         findViewById(R.id.button_root_setup).setOnClickListener(view -> runRootSetup());
