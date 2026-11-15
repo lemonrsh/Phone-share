@@ -132,6 +132,16 @@ final class IncomingSessions {
         listener.onIncomingSessions(sessions);
     }
 
+    /** Blocking: every session running right now. Not on the main thread. */
+    static List<Session> scanNow() {
+        return scan();
+    }
+
+    /** Blocking: asks one session to end. Not on the main thread. */
+    static boolean disconnectNow(Session session) {
+        return request(session.port, "DISCONNECT") != null;
+    }
+
     private static List<Session> scan() {
         List<Session> sessions = new ArrayList<>();
         for (int i = 0; i < PORT_COUNT; ++i) {
