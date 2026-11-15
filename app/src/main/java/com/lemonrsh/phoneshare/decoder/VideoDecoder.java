@@ -225,7 +225,7 @@ public final class VideoDecoder {
         try {
             newCodec = MediaCodec.createDecoderByType(mimeType);
             try {
-                newCodec.configure(createFormat(lowLatencySupported), surface, null, 0);
+                newCodec.configure(createFormat(lowLatencySupported, codecName(newCodec)), surface, null, 0);
             } catch (RuntimeException e) {
                 if (!lowLatencySupported) {
                     throw e;
@@ -235,7 +235,7 @@ public final class VideoDecoder {
                 lowLatencySupported = false;
                 newCodec.release();
                 newCodec = MediaCodec.createDecoderByType(mimeType);
-                newCodec.configure(createFormat(false), surface, null, 0);
+                newCodec.configure(createFormat(false, null), surface, null, 0);
             }
             newCodec.start();
             codec = newCodec;
@@ -254,7 +254,35 @@ public final class VideoDecoder {
         }
     }
 
-    private MediaFormat createFormat(boolean lowLatency) {
+    private static String codecName(MediaCodec codec) {
+        try {
+            return codec.getName().toLowerCase(java.util.Locale.ROOT);
+        } catch (RuntimeException e) {
+            return "";
+        }
+    }
+
+    /**
+     * Vendor switches that make hardware decoders output each frame as soon as it is decoded
+     * (the same ones game-streaming apps use). Only set for the matching chip maker; if the
+     * decoder rejects them, {@link #configureLocked()} retries without any low-latency hint.
+     */
+    static void addVendorLowLatency(MediaFormat format, String name) {
+        if (name == null) {
+            return;
+        }
+        if (name.startsWith("c2.qti.") || name.startsWith("omx.qcom.")) {
+            format.setInteger("vendor.qti-ext-dec-low-latency.enable", 1);
+            format.setInteger("vendor.qti-ext-dec-picture-order.enable", 1);
+        } else if (name.startsWith("c2.exynos.") || name.startsWith("omx.exynos.")) {
+            format.setInteger("vendor.rtc-ext-dec-low-latency.enable", 1);
+        } else if (name.startsWith("omx.hisi.") || name.startsWith("c2.hisi.")) {
+            format.setInteger("vendor.hisi-ext-low-latency-video-dec.video-scene-for-low-latency-req", 1);
+            format.setInteger("vendor.hisi-ext-low-latency-video-dec.video-scene-for-low-latency-rdy", -1);
+        }
+    }
+
+    private MediaFormat createFormat(boolean lowLatency, String codecName) {
         MediaFormat format = MediaFormat.createVideoFormat(mimeType, width, height);
         for (int i = 0; i < csd.length; ++i) {
             format.setByteBuffer("csd-" + i, csd[i].duplicate());
@@ -267,6 +295,7 @@ public final class VideoDecoder {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 format.setInteger(MediaFormat.KEY_LOW_LATENCY, 1);
             }
+            addVendorLowLatency(format, codecName);
         }
         return format;
     }
@@ -307,6 +336,7 @@ public final class VideoDecoder {
     }
 
     private void drainOutput() {
+        com.lemonrsh.phoneshare.Perf.boostThread(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
         MediaCodec.BufferInfo info = new MediaCodec.BufferInfo();
         while (!released) {
             boolean idle = false;

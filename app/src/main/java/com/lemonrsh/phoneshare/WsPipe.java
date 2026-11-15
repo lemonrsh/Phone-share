@@ -21,6 +21,7 @@ final class WsPipe {
     private final InputStream wsIn;
     private final OutputStream wsOut;
     private final boolean maskOutgoing;
+    private final WsFrames.Writer writer = new WsFrames.Writer(); // guarded by writeLock
     private final Socket tcp;
     private final String name;
     private final Object writeLock = new Object();
@@ -52,11 +53,12 @@ final class WsPipe {
 
     private void send(int opcode, byte[] data, int offset, int length) throws IOException {
         synchronized (writeLock) {
-            WsFrames.write(wsOut, opcode, data, offset, length, maskOutgoing, RANDOM);
+            writer.write(wsOut, opcode, data, offset, length, maskOutgoing, RANDOM);
         }
     }
 
     private void tcpToWs() {
+        Perf.boostThread(android.os.Process.THREAD_PRIORITY_DISPLAY);
         byte[] buffer = new byte[64 * 1024];
         try {
             InputStream in = tcp.getInputStream();
@@ -76,28 +78,29 @@ final class WsPipe {
     }
 
     private void wsToTcp() {
+        Perf.boostThread(android.os.Process.THREAD_PRIORITY_DISPLAY);
         try {
             OutputStream out = tcp.getOutputStream();
+            WsFrames.Reader frame = new WsFrames.Reader(wsIn); // one reused buffer, no garbage per frame
             while (!closed.get()) {
-                WsFrames.Frame frame = WsFrames.read(wsIn);
-                if (frame == null) {
+                if (!frame.next()) {
                     break;
                 }
                 switch (frame.opcode) {
                     case WsFrames.OP_BINARY:
                     case WsFrames.OP_TEXT:
                     case WsFrames.OP_CONTINUATION:
-                        if (frame.payload.length > 0) {
-                            out.write(frame.payload);
+                        if (frame.length > 0) {
+                            out.write(frame.payload, 0, frame.length);
                             out.flush();
                         }
                         break;
                     case WsFrames.OP_PING:
-                        send(WsFrames.OP_PONG, frame.payload, 0, frame.payload.length);
+                        send(WsFrames.OP_PONG, frame.payload, 0, frame.length);
                         break;
                     case WsFrames.OP_CLOSE:
                         try {
-                            send(WsFrames.OP_CLOSE, frame.payload, 0, Math.min(frame.payload.length, 2));
+                            send(WsFrames.OP_CLOSE, frame.payload, 0, Math.min(frame.length, 2));
                         } catch (IOException ignored) {
                             // already gone
                         }

@@ -13,10 +13,15 @@ on:
         type: boolean
         default: false
       release_tag:
-        description: Git tag for the standard release (for example v5.0.1). The cloudflared edition is released as <tag>-cloudflared
+        description: Git tag of the release (for example v5.0.1-beta1). One release holds both editions (standard and cloudflared)
         required: true
         type: string
         default: v5.0.1
+      release_title:
+        description: Optional release title after "Phone Share" (for example "5.0.1 Beta 1"); the tag is used when empty
+        required: false
+        type: string
+        default: ''
       prerelease:
         description: Mark the release as a pre-release (test builds)
         required: false
@@ -160,6 +165,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           RELEASE_TAG: ${{ inputs.release_tag }}
           PRERELEASE: ${{ inputs.prerelease }}
+          RELEASE_TITLE: ${{ inputs.release_title }}
         run: |
           set -euo pipefail
           if [[ ! "$RELEASE_TAG" =~ ^[A-Za-z0-9._-]+$ ]]; then
@@ -180,37 +186,41 @@ jobs:
             fi
             echo "$found"
           }
-          CF_TAG="${RELEASE_TAG}-cloudflared"
-          for tag in "$RELEASE_TAG" "$CF_TAG"; do
-            if gh release view "$tag" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-              echo "Release $tag already exists; refusing to overwrite it." >&2
-              exit 1
-            fi
-          done
-          cp "$(pick 'app-standard-release*.apk')" "dist/phone-share-${RELEASE_TAG}-unsigned.apk"
-          cp "$(pick 'app-standard-debug.apk')" "dist/phone-share-${RELEASE_TAG}-debug.apk"
-          cp "$(pick 'app-cloudflared-release*.apk')" "dist/phone-share-${CF_TAG}-unsigned.apk"
-          cp "$(pick 'app-cloudflared-debug.apk')" "dist/phone-share-${CF_TAG}-debug.apk"
+          # One release with both editions (same source, same app id and signing key).
+          STD_DEBUG="phone-share-${RELEASE_TAG}-debug.apk"
+          STD_UNSIGNED="phone-share-${RELEASE_TAG}-unsigned.apk"
+          CF_DEBUG="phone-share-${RELEASE_TAG}-cloudflared-debug.apk"
+          CF_UNSIGNED="phone-share-${RELEASE_TAG}-cloudflared-unsigned.apk"
+          cp "$(pick 'app-standard-debug.apk')" "dist/$STD_DEBUG"
+          cp "$(pick 'app-standard-release*.apk')" "dist/$STD_UNSIGNED"
+          cp "$(pick 'app-cloudflared-debug.apk')" "dist/$CF_DEBUG"
+          cp "$(pick 'app-cloudflared-release*.apk')" "dist/$CF_UNSIGNED"
           extra=()
           latest=(--latest)
           if [[ "$PRERELEASE" == "true" ]]; then
             extra+=(--prerelease)
             latest=()
           fi
-          install_note="Install the debug APK: it is signed with the fixed project debug key, so later updates install over it and keep your settings. From 5.0.1-r20 the app id is com.lemonrsh.phoneshare: it installs next to older versions (org.las2mile.scrcpy), so uninstall the old one. The release APK is unsigned unless release signing is configured. The standard and cloudflared editions share the same app id and key, so you can switch between them by installing the other one."
-          # Cloudflared edition first, so that the standard edition ends up as the latest release.
-          gh release create "$CF_TAG" "${extra[@]}" \
-            "dist/phone-share-${CF_TAG}-unsigned.apk" \
-            "dist/phone-share-${CF_TAG}-debug.apk" \
-            --repo "$GITHUB_REPOSITORY" \
-            --target "$GITHUB_SHA" \
-            --latest=false \
-            --title "Phone Share $CF_TAG (with Cloudflare sharing)" \
-            --notes "Cloudflared edition, built from $GITHUB_SHA: everything in the standard edition plus \"Share this phone over the internet\" (bundled cloudflared for arm64-v8a, armeabi-v7a and x86_64) and connecting with share codes. Same source as $RELEASE_TAG. $install_note"
+          notes_file="$(mktemp)"
+          cat > "$notes_file" <<NOTES
+          Built from ${GITHUB_SHA}. Both editions are in this release; install **one** of them (they share the app id \`com.lemonrsh.phoneshare\` and the signing key, so you can switch by installing the other).
+
+          | File | Edition | Size |
+          |---|---|---|
+          | **${STD_DEBUG}** | Standard: mirror and control over Wi-Fi / VPN (IP address) | about 2 MB |
+          | **${CF_DEBUG}** | Cloudflare: everything in Standard, plus sharing a phone over the internet with a link and connecting with share links | about 42 MB |
+
+          Install a **-debug.apk** file: it is signed with the fixed project key, so later updates install over it and keep your settings. The **-unsigned.apk** files are for your own signing.
+
+          From 5.0.1-r20 the app id is \`com.lemonrsh.phoneshare\`: it installs next to versions older than r20 (\`org.las2mile.scrcpy\`), so uninstall the old one.
+          NOTES
+          sed -i 's/^          //' "$notes_file"
           gh release create "$RELEASE_TAG" "${extra[@]}" "${latest[@]}" \
-            "dist/phone-share-${RELEASE_TAG}-unsigned.apk" \
-            "dist/phone-share-${RELEASE_TAG}-debug.apk" \
+            "dist/$STD_DEBUG" \
+            "dist/$CF_DEBUG" \
+            "dist/$STD_UNSIGNED" \
+            "dist/$CF_UNSIGNED" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
-            --title "Phone Share $RELEASE_TAG" \
-            --notes "Standard edition (no Cloudflare), built from $GITHUB_SHA. Same source as $CF_TAG, which adds Cloudflare sharing. $install_note"
+            --title "Phone Share ${RELEASE_TITLE:-$RELEASE_TAG}" \
+            --notes-file "$notes_file"

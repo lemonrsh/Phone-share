@@ -61,9 +61,114 @@ final class WsFrames {
     private WsFrames() {
     }
 
+    /**
+     * Writes frames with one reused buffer: header and payload go out in a single write, so a
+     * frame is one TLS record / TCP segment train instead of two, and nothing is allocated per
+     * frame. Not thread-safe.
+     */
+    static final class Writer {
+        private byte[] frame = new byte[0];
+        private final byte[] key = new byte[4];
+
+        void write(OutputStream out, int opcode, byte[] data, int offset, int length, boolean mask, Random random)
+                throws IOException {
+            int needed = 14 + length;
+            if (frame.length < needed) {
+                frame = new byte[Math.max(needed, 16 * 1024)];
+            }
+            byte[] f = frame;
+            int size = 0;
+            f[size++] = (byte) (0x80 | opcode);
+            int maskBit = mask ? 0x80 : 0;
+            if (length < 126) {
+                f[size++] = (byte) (maskBit | length);
+            } else if (length <= 0xFFFF) {
+                f[size++] = (byte) (maskBit | 126);
+                f[size++] = (byte) (length >>> 8);
+                f[size++] = (byte) length;
+            } else {
+                f[size++] = (byte) (maskBit | 127);
+                f[size++] = 0;
+                f[size++] = 0;
+                f[size++] = 0;
+                f[size++] = 0;
+                f[size++] = (byte) (length >>> 24);
+                f[size++] = (byte) (length >>> 16);
+                f[size++] = (byte) (length >>> 8);
+                f[size++] = (byte) length;
+            }
+            if (mask) {
+                random.nextBytes(key);
+                System.arraycopy(key, 0, f, size, 4);
+                size += 4;
+                for (int i = 0; i < length; ++i) {
+                    f[size + i] = (byte) (data[offset + i] ^ key[i & 3]);
+                }
+            } else {
+                System.arraycopy(data, offset, f, size, length);
+            }
+            out.write(f, 0, size + length);
+            out.flush();
+        }
+    }
+
+    /** Reads frames into one reused payload buffer ({@link #payload}, {@link #length} valid bytes). */
+    static final class Reader {
+        private final DataInputStream in;
+        private final byte[] key = new byte[4];
+        byte[] payload = new byte[0];
+        int length;
+        int opcode;
+
+        Reader(InputStream input) {
+            in = input instanceof DataInputStream ? (DataInputStream) input : new DataInputStream(input);
+        }
+
+        /** Reads the next frame; false at end of stream. */
+        boolean next() throws IOException {
+            int first = in.read();
+            if (first < 0) {
+                return false;
+            }
+            int second = in.readUnsignedByte();
+            opcode = first & 0x0F;
+            boolean masked = (second & 0x80) != 0;
+            long size = second & 0x7F;
+            if (size == 126) {
+                size = in.readUnsignedShort();
+            } else if (size == 127) {
+                size = in.readLong();
+            }
+            if (size < 0 || size > MAX_PAYLOAD) {
+                throw new IOException("WebSocket frame too large: " + size);
+            }
+            if (masked) {
+                in.readFully(key);
+            }
+            length = (int) size;
+            if (payload.length < length) {
+                payload = new byte[Math.max(length, 16 * 1024)];
+            }
+            in.readFully(payload, 0, length);
+            if (masked) {
+                byte[] p = payload;
+                for (int i = 0; i < length; ++i) {
+                    p[i] ^= key[i & 3];
+                }
+            }
+            return true;
+        }
+    }
+
     /** Writes one unfragmented frame. Clients must mask, servers must not. Not thread-safe. */
     static void write(OutputStream out, int opcode, byte[] data, int offset, int length, boolean mask, Random random)
             throws IOException {
+        new Writer().write(out, opcode, data, offset, length, mask, random);
+    }
+
+    /** Old one-shot writer, kept for reference in tests of the frame format. */
+    static void writeUnbuffered(OutputStream out, int opcode, byte[] data, int offset, int length, boolean mask,
+            Random random) throws IOException {
         byte[] header = new byte[14];
         int size = 0;
         header[size++] = (byte) (0x80 | opcode);
