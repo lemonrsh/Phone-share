@@ -3,17 +3,18 @@ package com.lemonrsh.phoneshare;
 import java.util.Locale;
 
 /**
- * The share link of "Share this phone over the internet": {@code https://<name>.trycloudflare.com/#<PIN>}.
+ * The share link of "Share this phone over the internet": {@code https://<name>.trycloudflare.com/<PIN>}.
+ * (Links of r22/Beta 1, {@code https://<name>.trycloudflare.com/#<PIN>}, still work. The PIN moved
+ * into the path because some messengers and in-app browsers drop the {@code #} part.)
  * Opening it in a browser shows a small page served by the shared phone itself
  * ({@link WsBridgeServer}) that opens Phone Share with a {@code phoneshare://connect?host=…&pin=…}
- * link, so the other person only has to tap Connect. The PIN stays in the URL fragment, which
- * browsers never send to a server.
+ * link, so the other person only has to tap Connect.
  */
 final class ShareLink {
     static final String APP_PACKAGE = "com.lemonrsh.phoneshare";
     static final String SCHEME = "phoneshare";
     // Connecting through a share link needs the cloudflared version (listed on the releases page).
-    static final String DOWNLOAD_URL = "https://github.com/lemonrsh/androidscrcpy/releases";
+    static final String DOWNLOAD_URL = "https://github.com/lemonrsh/Phone-share/releases";
 
     private ShareLink() {
     }
@@ -23,7 +24,7 @@ final class ShareLink {
         if (host == null || pin == null) {
             return null;
         }
-        return "https://" + host + "/#" + pin;
+        return "https://" + host + "/" + pin;
     }
 
     /**
@@ -94,15 +95,16 @@ final class ShareLink {
             + "<code id=\"code\"></code>\n"
             + "</div><script>\n"
             + "(function(){\n"
-            + "var pin=(location.hash||'').replace('#','');\n"
+            + "var pin=location.pathname.replace(/^\\/+|\\/+$/g,'');\n"
+            + "if(!/^[0-9]{4,12}$/.test(pin)){pin=(location.hash||'').replace('#','');}\n"
             + "var host=location.hostname;\n"
             + "var msg=document.getElementById('msg'),open=document.getElementById('open');\n"
-            + "document.getElementById('code').textContent='https://'+host+'/#'+pin;\n"
+            + "document.getElementById('code').textContent='https://'+host+'/'+pin;\n"
             + "if(!/^[0-9]{4,12}$/.test(pin)){msg.textContent='This link is missing its PIN. Ask for the full link again.';"
             + "open.style.display='none';return;}\n"
             + "var q='connect?host='+encodeURIComponent(host)+'&pin='+pin;\n"
             + "var android=/Android/i.test(navigator.userAgent);\n"
-            + "var back=location.origin+'/?noapp=1#'+pin;\n"
+            + "var back=location.origin+'/'+pin+'?noapp=1';\n"
             + "function intent(fallback){return 'intent://'+q+'#Intent;scheme=__SCHEME__;package=__PKG__;"
             + "S.browser_fallback_url='+encodeURIComponent(fallback)+';end';}\n"
             + "open.href=android?intent('__DL__'):'__SCHEME__://'+q;\n"

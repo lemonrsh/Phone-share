@@ -10,7 +10,7 @@ import static org.junit.Assert.assertTrue;
 public class ShareLinkTest {
     @Test
     public void buildsLinkOnly() {
-        assertEquals("https://blue-river-cat.trycloudflare.com/#123456",
+        assertEquals("https://blue-river-cat.trycloudflare.com/123456",
                 ShareLink.build("blue-river-cat.trycloudflare.com", "123456"));
         assertNull(ShareLink.build(null, "123456"));
         assertNull(ShareLink.build("blue-river-cat.trycloudflare.com", null));
@@ -37,6 +37,38 @@ public class ShareLinkTest {
     }
 
     @Test
+    public void acceptsLinksMangledByMessengers() {
+        String code = "blue-river-cat.trycloudflare.com#123456";
+        // New path form, with and without a trailing slash or tracking query.
+        assertEquals(code, ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/123456"));
+        assertEquals(code, ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/123456/"));
+        assertEquals(code, ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/123456?fbclid=IwAR0abc"));
+        // Old fragment form with a query added before the fragment (Facebook / Messenger).
+        assertEquals(code, ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/?fbclid=IwAR0abc#123456"));
+        // Whole message pasted, link in brackets or followed by punctuation.
+        assertEquals(code, ShareLink.codeFrom("Connect to my phone: https://blue-river-cat.trycloudflare.com/123456."));
+        assertEquals(code, ShareLink.codeFrom("(https://blue-river-cat.trycloudflare.com/#123456)"));
+        assertEquals(code, ShareLink.codeFrom("Paste this code: blue-river-cat.trycloudflare.com#123456\nThanks"));
+    }
+
+    @Test
+    public void floatingWindowAddressRoundTrips() {
+        HostAddress address = HostAddress.parse("https://blue-river-cat.trycloudflare.com/123456");
+        // The floating window used to receive toString() ("… (Cloudflare)") and said "Invalid target address".
+        HostAddress again = HostAddress.parse(address.toConnectString());
+        assertEquals("blue-river-cat.trycloudflare.com", again.host);
+        assertEquals("123456", again.pin);
+        HostAddress display = HostAddress.parse(address.toString());
+        assertEquals("blue-river-cat.trycloudflare.com", display.host);
+        HostAddress ip = HostAddress.parse(HostAddress.parse("192.168.1.4:5556").toConnectString());
+        assertEquals("192.168.1.4", ip.host);
+        assertEquals(5556, ip.port);
+        HostAddress v6 = HostAddress.parse(HostAddress.parse("fe80::1").toConnectString());
+        assertEquals("fe80::1", v6.host);
+        assertEquals(5555, v6.port);
+    }
+
+    @Test
     public void rejectsBadLinks() {
         assertNull(ShareLink.codeFrom(null));
         assertNull(ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/"));
@@ -45,6 +77,8 @@ public class ShareLinkTest {
         assertNull(ShareLink.codeFrom("phoneshare://connect?host=example.com&pin=123456"));
         assertNull(ShareLink.codeFrom("phoneshare://connect?host=blue-river-cat.trycloudflare.com"));
         assertNull(ShareLink.codeFrom("phoneshare://connect"));
+        assertNull(ShareLink.codeFrom("https://blue-river-cat.trycloudflare.com/12ab"));
+        assertNull(ShareLink.codeFrom("hello there"));
     }
 
     @Test
