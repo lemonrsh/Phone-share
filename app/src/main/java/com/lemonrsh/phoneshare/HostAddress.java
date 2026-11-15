@@ -32,7 +32,21 @@ public final class HostAddress {
             return null;
         }
         String value = text.trim();
-        if (value.isEmpty() || value.indexOf(' ') >= 0) {
+        // The display form "<name>.trycloudflare.com (Cloudflare)" (see toString()).
+        if (value.toLowerCase(java.util.Locale.ROOT).endsWith(DISPLAY_SUFFIX.toLowerCase(java.util.Locale.ROOT))) {
+            value = value.substring(0, value.length() - DISPLAY_SUFFIX.length()).trim();
+        }
+        if (hasWhitespace(value)) {
+            // A whole message was pasted ("Connect to my phone: https://…"): take the link.
+            value = findTunnelToken(value);
+            if (value == null) {
+                return null;
+            }
+        }
+        if (value.toLowerCase(java.util.Locale.ROOT).contains(CloudTunnel.SUFFIX)) {
+            value = trimPunctuation(value);
+        }
+        if (value.isEmpty()) {
             return null;
         }
         String pin = null;
@@ -52,16 +66,37 @@ public final class HostAddress {
                 break;
             }
         }
-        while (value.endsWith("/")) {
-            value = value.substring(0, value.length() - 1);
+        // A share link may carry a path and a query added by messengers, e.g.
+        // https://<name>.trycloudflare.com/482913?fbclid=… : the host ends at the first / or ?.
+        int hostEnd = value.length();
+        for (char stop : new char[] {'/', '?'}) {
+            int index = value.indexOf(stop);
+            if (index >= 0 && index < hostEnd) {
+                hostEnd = index;
+            }
         }
-        if (CloudTunnel.isTunnelHost(value)) {
-            String host = value.toLowerCase(java.util.Locale.ROOT);
+        if (CloudTunnel.isTunnelHost(value.substring(0, hostEnd))) {
+            String host = value.substring(0, hostEnd).toLowerCase(java.util.Locale.ROOT);
             if (!host.matches("[a-z0-9.-]+")) {
                 return null;
             }
+            if (pin == null) {
+                // Link form https://<name>.trycloudflare.com/<PIN>
+                String path = value.substring(hostEnd);
+                int question = path.indexOf('?');
+                if (question >= 0) {
+                    path = path.substring(0, question);
+                }
+                path = path.replaceAll("^/+|/+$", "");
+                if (path.matches("[0-9]{4,12}")) {
+                    pin = path;
+                }
+            }
             CloudTunnel.rememberPin(host, pin);
             return new HostAddress(host, DEFAULT_ADB_PORT, pin);
+        }
+        while (value.endsWith("/")) {
+            value = value.substring(0, value.length() - 1);
         }
         if (pin != null || value.isEmpty()) {
             return null;
@@ -98,6 +133,52 @@ public final class HostAddress {
         return new HostAddress(host, port, null);
     }
 
+    private static final String DISPLAY_SUFFIX = " (Cloudflare)";
+
+    private static boolean hasWhitespace(String value) {
+        for (int i = 0; i < value.length(); ++i) {
+            if (Character.isWhitespace(value.charAt(i))) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The first word containing ".trycloudflare.com", or null. */
+    private static String findTunnelToken(String text) {
+        for (String token : text.split("\\s+")) {
+            if (token.toLowerCase(java.util.Locale.ROOT).contains(CloudTunnel.SUFFIX)) {
+                return token;
+            }
+        }
+        return null;
+    }
+
+    /** Removes quotes, brackets and sentence punctuation around a pasted link. */
+    private static String trimPunctuation(String value) {
+        String wrap = ".,;:!?'\"()[]<>{}";
+        int start = 0;
+        int end = value.length();
+        while (start < end && wrap.indexOf(value.charAt(start)) >= 0) {
+            ++start;
+        }
+        while (end > start && wrap.indexOf(value.charAt(end - 1)) >= 0) {
+            --end;
+        }
+        return value.substring(start, end);
+    }
+
+    /**
+     * Text that {@link #parse} turns back into this address, PIN included (unlike
+     * {@link #toString()}, which is for display). Used to hand the address to the floating window.
+     */
+    public String toConnectString() {
+        if (isTunnel()) {
+            return pin == null ? host : host + "#" + pin;
+        }
+        return (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
+    }
+
     private static int parsePort(String text) {
         if (text.isEmpty() || text.length() > 5) {
             return -1;
@@ -114,7 +195,7 @@ public final class HostAddress {
     @Override
     public String toString() {
         if (isTunnel()) {
-            return host + " (Cloudflare)";
+            return host + DISPLAY_SUFFIX;
         }
         return (host.indexOf(':') >= 0 ? "[" + host + "]" : host) + ":" + port;
     }

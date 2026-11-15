@@ -100,7 +100,8 @@ final class WsBridgeServer {
             boolean upgrade = "websocket".equalsIgnoreCase(head.header("Upgrade"));
             String key = head.header("Sec-WebSocket-Key");
             if (!upgrade || key.isEmpty()) {
-                if (target.isEmpty() || "connect".equals(target)) {
+                String page = target.replaceAll("/+$", "");
+                if (page.isEmpty() || "connect".equals(page) || page.matches("[0-9]{4,12}")) {
                     // The share link opened in a browser: a page that opens Phone Share.
                     respondPage(out, ShareLink.landingPage());
                 } else if ("favicon.ico".equals(target)) {

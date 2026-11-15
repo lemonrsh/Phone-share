@@ -6,7 +6,7 @@
 
 Phone Share puts the other phone's screen on yours, full screen or in a small floating window like YouTube's popup player. You can tap, swipe and type on it, and hear its sound. It uses the [scrcpy](https://github.com/Genymobile/scrcpy) server (pinned to upstream `v5.0.1`) and talks to it directly over the network, so you don't need a desktop `adb`.
 
-> **Status: Beta 1 (`v5.0.1-beta1`).** It works, but expect rough edges. Please report problems and attach the logs (see [Troubleshooting](#troubleshooting)).
+> **Status: Beta 2 (`v5.0.1-beta2`).** It works, but expect rough edges. Please report problems and attach the logs (see [Troubleshooting](#troubleshooting)).
 
 ---
 
@@ -98,7 +98,7 @@ Requirements: Android 5.0 or newer on both phones. Sound needs Android 11 or new
 *Cloudflare edition only.* Mirror a phone from anywhere. The phones don't need the same Wi-Fi, a VPN or a Cloudflare account.
 
 1. **On the shared phone**, open Phone Share and tap **Start sharing**. After a few seconds you get a link like
-   `https://blue-river-cat.trycloudflare.com/#482913`
+   `https://blue-river-cat.trycloudflare.com/482913`
 2. Tap **Send…** (shares **only the link**) or **Copy link**.
 3. **On the other phone**, open the link:
    1. The link opens a small page that launches **Phone Share** with the address filled in.
@@ -111,7 +111,8 @@ Requirements: Android 5.0 or newer on both phones. Sound needs Android 11 or new
 - **Pasting also works:** paste the link into the address box and tap **Connect**.
 
 **Good to know**
-- **A new link every time** you start sharing. The 6-digit PIN after `#` protects it, and browsers never send that part to any server.
+- **A new link every time** you start sharing. The 6-digit PIN at the end protects it.
+- **Robust links:** links still work when a messenger adds tracking parts (like `?fbclid=…`), when the whole message is pasted instead of just the link, and in the old Beta 1 form (`…/#482913`).
 - **Needs ADB on port 5555** on the shared phone. The app tells you if it's off.
 - **Test service:** quick tunnels are Cloudflare's free testing service, with no uptime guarantee and more delay than the same Wi-Fi. Use 480p and 1 Mbps for the smoothest picture.
 
@@ -123,7 +124,7 @@ Requirements: Android 5.0 or newer on both phones. Sound needs Android 11 or new
 
 ## The phone being shared
 
-If Phone Share (Beta 1 or r21+) is also installed on the shared phone:
+If Phone Share (r21 or newer) is also installed on the shared phone:
 
 - **Notification:** while someone is connected, it shows a notification for the whole session, e.g. **"Pixel 8 is connected to this phone · It can see and control your screen"**.
   - It has a **Disconnect** button that ends the session immediately.
@@ -205,7 +206,7 @@ Each section has **Copy** and **Share**. When the floating player shows an error
 | **ADB is not listening on …** | ADB over Wi-Fi is off on the shared phone. Run `adb tcpip 5555`, or use the root button there. |
 | **The target hung up during ADB authorization** / **Timed out waiting for ADB authorization** | Unlock the shared phone and tap **Allow** on "Allow USB debugging?". No prompt? Use *Developer options › Revoke USB debugging authorizations* and try again. |
 | **The scrcpy server stopped: …** | ADB worked but the server exited; the message includes its last output. Try 480p and H.264. |
-| A share link says **missing its PIN** | Ask for the whole link, including the part after `#`. |
+| A share link says **missing its PIN** | Ask for the whole link, including the 6 digits at the end. |
 | The "connected" notification doesn't show | Install Phone Share on the shared phone and allow notifications. Android 12+ may delay it until the app is opened once. |
 
 Android 11+ **Wireless debugging** pairing codes aren't supported yet. Use classic ADB over TCP on port 5555.
@@ -241,7 +242,7 @@ Requirements: JDK 17, Android SDK Platform 36, build-tools 36.0.0.
 
 ## Releases
 
-The **Android APK** GitHub Actions workflow builds and tests both editions on every pull request and push to `main`. To publish, run it manually with **Publish GitHub release** on and a tag (e.g. `v5.0.1-beta1`).
+The **Android APK** GitHub Actions workflow builds and tests both editions on every pull request and push to `main`. To publish, run it manually with **Publish GitHub release** on and a tag (e.g. `v5.0.1-beta2`).
 
 **One release** holds all four files, built from the same commit:
 - `phone-share-<tag>-debug.apk` (Standard)

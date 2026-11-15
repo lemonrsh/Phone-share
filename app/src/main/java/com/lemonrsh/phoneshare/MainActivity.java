@@ -1108,7 +1108,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
         }
         Intent intent = new Intent(this, FloatService.class);
         intent.setAction(FloatService.ACTION_START);
-        intent.putExtra(FloatService.EXTRA_HOST, hostAddress.toString());
+        // toConnectString(): toString() is the display form ("… (Cloudflare)"), which is not an address.
+        intent.putExtra(FloatService.EXTRA_HOST, hostAddress.toConnectString());
         sessionOptions.putInto(intent);
         try {
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
