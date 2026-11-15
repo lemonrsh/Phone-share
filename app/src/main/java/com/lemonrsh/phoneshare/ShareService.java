@@ -73,9 +73,12 @@ public class ShareService extends Service {
         return message;
     }
 
-    /** The text the other phone pastes into its address box. */
+    /**
+     * The share link sent to the other phone ({@code https://<name>.trycloudflare.com/#PIN}):
+     * opening it opens Phone Share there, and it can also be pasted into the address box.
+     */
     static String shareCode() {
-        return address == null || pin == null ? null : address + "#" + pin;
+        return ShareLink.build(address, pin);
     }
 
     static void addListener(Listener listener) {

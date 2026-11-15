@@ -34,6 +34,25 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Share links: phoneshare://connect?host=…&pin=… opened by the link's web page. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="connect"
+                    android:scheme="phoneshare" />
+            </intent-filter>
+            <!-- The https share link itself (Android 11 and older may offer to open it here;
+                 newer Android opens it in the browser, whose page then opens the app). -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data
+                    android:host="*.trycloudflare.com"
+                    android:scheme="https" />
+            </intent-filter>
         </activity>
 
         <activity
