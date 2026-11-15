@@ -14,7 +14,7 @@ final class ShareLink {
     static final String APP_PACKAGE = "com.lemonrsh.phoneshare";
     static final String SCHEME = "phoneshare";
     // Connecting through a share link needs the cloudflared version (listed on the releases page).
-    static final String DOWNLOAD_URL = "https://github.com/lemonrsh/androidscrcpy/releases";
+    static final String DOWNLOAD_URL = "https://github.com/lemonrsh/Phone-share/releases";
 
     private ShareLink() {
     }

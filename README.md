@@ -30,7 +30,7 @@ Phone Share puts the other phone's screen on yours, full screen or in a small fl
 
 ## Download
 
-Get the newest release from the **[Releases page](https://github.com/lemonrsh/androidscrcpy/releases)**. Each release contains both editions. Install **one**:
+Get the newest release from the **[Releases page](https://github.com/lemonrsh/Phone-share/releases)**. Each release contains both editions. Install **one**:
 
 | File | Edition | Size | Use it when |
 |---|---|---|---|
