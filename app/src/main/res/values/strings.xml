@@ -136,6 +136,11 @@
     <string name="overlay_prompt_go">Go to settings</string>
     <string name="overlay_prompt_later">Do it later</string>
     <string name="overlay_prompt_granted">Floating window allowed</string>
+    <string name="battery_prompt_title">Let Phone Share run in the background?</string>
+    <string name="battery_prompt_message">So that mirroring in the floating window, sharing this phone and the \"connected\" notification keep working when you switch apps or the screen turns off, Android should not pause Phone Share to save battery.\n\nTap Allow, then Allow in the next window. It only uses battery while a session or sharing is running.</string>
+    <string name="battery_prompt_allow">Allow</string>
+    <string name="battery_prompt_granted">Phone Share can run in the background</string>
+    <string name="battery_prompt_unavailable">Open Android Settings › Apps › Phone Share › Battery and choose Unrestricted.</string>
 
     <!-- Start-up question when ADB over Wi-Fi is off on this phone. -->
     <string name="adb_prompt_title">Turn on ADB on this phone?</string>

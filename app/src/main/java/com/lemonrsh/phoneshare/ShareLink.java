@@ -89,7 +89,7 @@ final class ShareLink {
             + "<p id=\"msg\">Opening Phone Share&hellip;</p>\n"
             + "<a id=\"open\" class=\"btn open\" href=\"#\">Open in Phone Share</a>\n"
             + "<a class=\"btn dl\" href=\"__DL__\">Download Phone Share</a>\n"
-            + "<p class=\"small\">Get the newest <b>-cloudflared</b> version (file ending in -debug.apk).</p>\n"
+            + "<p class=\"small\">Get the newest release and install the file ending in <b>-cloudflared-debug.apk</b>.</p>\n"
             + "<p class=\"small\">Or copy this link, paste it into the address box of Phone Share and tap Connect:</p>\n"
             + "<code id=\"code\"></code>\n"
             + "</div><script>\n"

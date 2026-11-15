@@ -11,6 +11,10 @@
     <!-- Cloudflare sharing permissions are added by src/cloudflared/AndroidManifest.xml. -->
     <!-- "Phone Share is running" notifications (floating window and full-screen sessions). -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <!-- Start-up question "Let Phone Share run in the background?" (one system dialog). -->
+    <uses-permission
+        android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS"
+        tools:ignore="BatteryLife" />
 
     <application
         android:allowBackup="true"

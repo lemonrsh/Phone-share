@@ -71,6 +71,8 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
     private static boolean adbPromptChecked;
     /** The start-up floating-window permission question is asked at most once per app launch. */
     private static boolean overlayPromptChecked;
+    private static boolean batteryPromptChecked;
+    private boolean resumeAfterBatteryPrompt;
     /** Back from the overlay settings opened by the start-up question: continue with the ADB question. */
     private boolean resumeStartupPrompts;
     /** The settings page (gear button) is shown instead of the main page. */
@@ -221,13 +223,16 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
 
     // ---------------------------------------------------------------- start-up questions
 
-    /** First the floating-window permission, then the ADB question (one dialog at a time). */
+    /**
+     * One dialog at a time: 1. the floating-window permission, 2. running in the background
+     * (no battery restrictions), 3. the ADB question.
+     */
     private void runStartupPrompts() {
         if (!overlayPromptChecked && needsOverlayPermission()) {
             overlayPromptChecked = true;
             showOverlayPrompt();
         } else {
-            checkAdbOnStartup();
+            checkBatteryOnStartup();
         }
     }
 
@@ -247,9 +252,9 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
                 })
                 .setNegativeButton(R.string.overlay_prompt_later, (dialog, which) -> {
                     DiagnosticLog.i("app", "Start-up: floating window permission later");
-                    checkAdbOnStartup();
+                    checkBatteryOnStartup();
                 })
-                .setOnCancelListener(dialog -> checkAdbOnStartup())
+                .setOnCancelListener(dialog -> checkBatteryOnStartup())
                 .show();
     }
 
@@ -263,12 +268,75 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             } catch (RuntimeException e2) {
                 Toast.makeText(this, R.string.auto_float_needs_permission, Toast.LENGTH_LONG).show();
                 resumeStartupPrompts = false;
-                checkAdbOnStartup();
+                checkBatteryOnStartup();
             }
         }
     }
 
     /** When ADB over Wi-Fi is off: offer to turn it on, or just use the app as a controller. */
+    // ---- 2. "Run in the background": no battery restrictions (Android 6+)
+
+    private boolean needsBatteryExemption() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) {
+            return false;
+        }
+        try {
+            android.os.PowerManager power = (android.os.PowerManager) getSystemService(POWER_SERVICE);
+            return power != null && !power.isIgnoringBatteryOptimizations(getPackageName());
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Without this Android may pause the floating window, the "connected" notification and
+     * Cloudflare sharing when the screen is off: Allow (one system dialog), or Later.
+     */
+    private void checkBatteryOnStartup() {
+        if (batteryPromptChecked || !needsBatteryExemption()) {
+            checkAdbOnStartup();
+            return;
+        }
+        batteryPromptChecked = true;
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.battery_prompt_title)
+                .setMessage(R.string.battery_prompt_message)
+                .setPositiveButton(R.string.battery_prompt_allow, (dialog, which) -> {
+                    DiagnosticLog.i("app", "Start-up: asking to run in the background");
+                    resumeAfterBatteryPrompt = true;
+                    if (!openBatteryExemption()) {
+                        resumeAfterBatteryPrompt = false;
+                        checkAdbOnStartup();
+                    }
+                })
+                .setNegativeButton(R.string.overlay_prompt_later, (dialog, which) -> {
+                    DiagnosticLog.i("app", "Start-up: background permission later");
+                    checkAdbOnStartup();
+                })
+                .setOnCancelListener(dialog -> checkAdbOnStartup())
+                .show();
+    }
+
+    /** The system "Allow Phone Share to always run in the background?" dialog, or the battery list. */
+    @SuppressLint("BatteryLife")
+    private boolean openBatteryExemption() {
+        try {
+            startActivity(new Intent(Settings.ACTION_REQUEST_IGNORE_BATTERY_OPTIMIZATIONS,
+                    android.net.Uri.parse("package:" + getPackageName())));
+            return true;
+        } catch (RuntimeException e) {
+            try {
+                startActivity(new Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS));
+                return true;
+            } catch (RuntimeException e2) {
+                Toast.makeText(this, R.string.battery_prompt_unavailable, Toast.LENGTH_LONG).show();
+                return false;
+            }
+        }
+    }
+
+    // ---- 3. ADB over Wi-Fi
+
     private void checkAdbOnStartup() {
         if (adbPromptChecked || getPreferences().getBoolean(PREFERENCE_ADB_PROMPT_OFF, false)) {
             return;
@@ -1620,6 +1688,12 @@ public class MainActivity extends Activity implements ScrcpyClient.Listener, Sen
             resumeStartupPrompts = false;
             if (!needsOverlayPermission()) {
                 Toast.makeText(this, R.string.overlay_prompt_granted, Toast.LENGTH_SHORT).show();
+            }
+            checkBatteryOnStartup();
+        } else if (resumeAfterBatteryPrompt) {
+            resumeAfterBatteryPrompt = false;
+            if (!needsBatteryExemption()) {
+                Toast.makeText(this, R.string.battery_prompt_granted, Toast.LENGTH_SHORT).show();
             }
             checkAdbOnStartup();
         }

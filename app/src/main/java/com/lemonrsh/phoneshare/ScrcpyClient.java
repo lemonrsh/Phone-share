@@ -272,6 +272,7 @@ public final class ScrcpyClient {
     }
 
     private void runVideo() {
+        Perf.boostThread(android.os.Process.THREAD_PRIORITY_URGENT_DISPLAY);
         String failure = null;
         try {
             connectSockets();
@@ -469,6 +470,8 @@ public final class ScrcpyClient {
     }
 
     private void runAudio() {
+        // Like Android's own audio threads: sound must not wait for anything else.
+        Perf.boostThread(android.os.Process.THREAD_PRIORITY_URGENT_AUDIO);
         AudioDecoder decoder = null;
         try {
             Socket socket = audioSocket;
@@ -528,6 +531,7 @@ public final class ScrcpyClient {
     }
 
     private void runControl() {
+        Perf.boostThread(android.os.Process.THREAD_PRIORITY_DISPLAY); // touches go out at once
         try {
             Socket socket = controlSocket;
             if (socket == null) {
